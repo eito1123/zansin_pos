@@ -1,0 +1,31 @@
+# Dependencies and generated build output
+node_modules/
+/dist/
+
+# Local hosting configuration (may contain account/project identifiers)
+.vercel/
+
+# Local environment and secrets; keep a shareable example if added
+.env*
+!.env.example
+!.env.sample
+*.pem
+*.key
+
+# Test artifacts
+/tests/*.png
+/test-results/
+/playwright-report/
+/coverage/
+
+# Runtime logs
+*.log
+
+# OS and editor-local files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo

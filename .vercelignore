@@ -1,0 +1,8 @@
+AGENTS.md
+tests/
+server.mjs
+README.md
+node_modules/
+dist/
+.git/
+.env*
