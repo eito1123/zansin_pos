@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#203e35">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>炭と、祭。｜屋台POS</title>
+  <title>zansin学祭POS</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <div class="shell">
-    <header><div class="brand"><span class="brand-mark">炭</span><div><strong>炭と、祭。</strong><small>YAKITORI / FESTIVAL POS</small></div></div><div class="header-right"><span id="connection" class="connection">起動中</span><span id="today"></span></div></header>
-    <div id="message" role="status" aria-live="polite" hidden></div>
+    <header><button class="brand" id="home" aria-label="zansin学祭POS セット数選択へ"><strong>zansin学祭POS</strong></button><div class="header-right"><span id="connection" class="connection">起動中</span><span id="today"></span></div></header>
     <main id="app" aria-busy="true"><p class="loading">レジを準備しています…</p></main>
-    <footer><span>ひと串ずつ、いい時間。</span><span id="storage-status">この端末に売上を保存します</span></footer>
+    <div id="message" role="status" aria-live="polite" hidden></div>
+    <footer><span id="storage-status">この端末に売上を保存します</span></footer>
   </div>
   <dialog id="cancel-dialog"><form method="dialog"><span class="eyebrow">CANCEL ORDER</span><h2>この会計を取り消しますか？</h2><p id="cancel-description"></p><p class="muted">履歴は残り、売上の集計から除外されます。</p><div class="dialog-actions"><button value="close">キャンセル</button><button type="button" id="confirm-cancel" class="danger">取り消す</button></div><p id="cancel-error" role="alert"></p></form></dialog>
   <script type="module" src="./app.js"></script>

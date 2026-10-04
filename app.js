@@ -17,15 +17,20 @@ function connection() {
 }
 function render() {
   app.setAttribute('aria-busy', String(busy));
+  document.querySelector('#home').disabled = busy;
+  document.body.classList.toggle('report-mode', screen === 'report');
   const total = Number(quantity) * (screen === 'checkout' ? checkoutPrice : unitPrice);
   if (screen === 'quantity') {
-    app.innerHTML = `<div class="page-heading"><div><h1>何セットにしますか？</h1></div><button data-screen="history" class="history-button">売上履歴 <span>↗</span></button></div><div class="order-layout"><section class="selection"><div class="section-label"><span>セット数を選択</span><span class="price-chip">1セット ${yen(unitPrice)}</span></div><div class="presets">${[1,2,3,4].map(n => `<button data-quantity="${n}" class="preset ${Number(quantity) === n ? 'selected' : ''}"><strong>${n}</strong><span>セット</span><small>${yen(n * unitPrice)}</small></button>`).join('')}</div><p class="hint">5セット以上は、右のテンキーで入力できます。</p></section><section class="input-panel"><div class="quantity-display"><span>ご注文の数量</span><div><strong id="quantity-value">${Number(quantity)}</strong><span>セット</span></div></div>${keypad()}<div class="subtotal"><span>お会計予定</span><strong id="subtotal">${yen(total)}</strong></div><button class="primary wide" id="next" ${Number(quantity) < 1 ? 'disabled' : ''}>お会計へ <span>→</span></button></section></div>`;
+    app.innerHTML = `<div class="page-heading"><button data-screen="history" class="history-button">売上履歴 <span>↗</span></button></div><div class="order-layout"><section class="selection"><div class="section-label"><span class="price-chip">1セット ${yen(unitPrice)}</span></div><div class="presets">${[1,2,3,4].map(n => `<button data-quantity="${n}" class="preset ${Number(quantity) === n ? 'selected' : ''}"><strong>${n}</strong><span>セット</span><small>${yen(n * unitPrice)}</small></button>`).join('')}</div></section><section class="input-panel"><div class="quantity-display"><span>ご注文の数量</span><div><strong id="quantity-value">${Number(quantity)}</strong><span>セット</span></div></div>${keypad()}<div class="subtotal"><span>お会計予定</span><strong id="subtotal">${yen(total)}</strong></div><button class="primary wide" id="next" ${Number(quantity) < 1 ? 'disabled' : ''}>お会計へ <span>→</span></button></section></div>`;
   } else if (screen === 'checkout') {
     const change = Number(received) - total;
     app.innerHTML = `<div class="page-heading">${back('quantity', '数量入力へ')}</div><div class="checkout-layout"><section class="bill-panel"><h1>お会計</h1><div class="bill-total">${yen(total)}</div><p class="bill-detail">${quantity} セット <span>×</span> ${yen(checkoutPrice)}</p><div class="change-box"><span>お釣り</span><strong id="change">${received && change >= 0 ? yen(change) : '—'}</strong><small id="shortfall">${received && change < 0 ? `${yen(-change)} 不足しています` : ''}</small></div></section><section class="input-panel"><div class="received-display"><span>お預かり</span><strong id="received-value">${received ? yen(Number(received)) : '¥0'}</strong></div>${keypad()}<button class="primary wide" id="complete" ${received !== '' && change < 0 ? 'disabled' : ''}>会計完了 <span>✓</span></button><p class="hint completion-hint">お預かり未入力なら、計算せず完了</p></section></div>`;
   } else if (screen === 'history') {
     const today = summarize(orders, new Date());
-    app.innerHTML = `<div class="page-heading"><div>${back('quantity', 'レジに戻る')}<h1>売上履歴</h1></div><div class="actions"><button data-screen="settings">価格設定</button><button id="export-csv">CSV出力 ↓</button><button id="export-json">JSON出力 ↓</button></div></div><div class="stats"><div><span>本日売上</span><strong>${yen(today.amount)}</strong></div><div><span>販売セット数</span><strong>${today.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${today.count}<small> 件</small></strong></div></div><div class="table-heading"><h2>すべての会計</h2><span>新しい順 · 取消済みを含む ${orders.length} 件</span></div><div class="table-scroll"><table><thead><tr><th>日時</th><th>数量</th><th>当時の単価</th><th>会計金額</th><th>状態</th><th></th></tr></thead><tbody>${orders.length ? orders.map(o => `<tr class="${o.isActive ? '' : 'cancelled'}"><td>${new Date(o.date).toLocaleString('ja-JP', { year: 'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</td><td>${o.quantity} セット</td><td>${yen(o.unitPrice)}</td><td class="amount-cell">${yen(o.amount)}</td><td><span class="badge ${o.isActive ? '' : 'inactive'}">${o.isActive ? '完了' : '取消済み'}</span></td><td>${o.isActive ? `<button class="cancel-button" data-cancel="${o.id}">取消</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">売上はまだありません。最初の会計をはじめましょう。</td></tr>'}</tbody></table></div><p class="hint">集計はこの端末の本日分です。出力には全期間・取消済みの会計も含まれます。</p>`;
+    app.innerHTML = `<div class="page-heading"><div>${back('quantity', 'レジに戻る')}<h1>売上履歴</h1></div><div class="actions"><button data-screen="settings">価格設定</button><button id="export-csv">CSV出力 ↓</button><button id="export-json">JSON出力 ↓</button><button data-screen="report">PDF出力 ↓</button></div></div><div class="stats"><div><span>本日売上</span><strong>${yen(today.amount)}</strong></div><div><span>販売セット数</span><strong>${today.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${today.count}<small> 件</small></strong></div></div><div class="table-heading"><h2>すべての会計</h2><span>新しい順 · 取消済みを含む ${orders.length} 件</span></div><div class="table-scroll"><table><thead><tr><th>日時</th><th>数量</th><th>当時の単価</th><th>会計金額</th><th>状態</th><th></th></tr></thead><tbody>${orders.length ? orders.map(o => `<tr class="${o.isActive ? '' : 'cancelled'}"><td>${new Date(o.date).toLocaleString('ja-JP', { year: 'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</td><td>${o.quantity} セット</td><td>${yen(o.unitPrice)}</td><td class="amount-cell">${yen(o.amount)}</td><td><span class="badge ${o.isActive ? '' : 'inactive'}">${o.isActive ? '完了' : '取消済み'}</span></td><td>${o.isActive ? `<button class="cancel-button" data-cancel="${o.id}">取消</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">売上はまだありません。最初の会計をはじめましょう。</td></tr>'}</tbody></table></div><p class="hint">集計はこの端末の本日分です。出力には全期間・取消済みの会計も含まれます。</p>`;
+  } else if (screen === 'report') {
+    const totals = summarize(orders);
+    app.innerHTML = `<div class="report-controls">${back('history', '売上履歴へ')}<button class="primary" id="print-report">PDF保存 / 印刷</button><p>印刷画面からPDFとして保存できます。</p></div><article class="report"><h1>zansin学祭POS 売上明細</h1><p>出力日時：${new Date().toLocaleString('ja-JP')}</p><p>対象：全期間 ／ 合計は取消済みを除外</p><div class="report-totals">売上合計 ${yen(totals.amount)}　 /　 ${totals.quantity} セット　 /　 ${totals.count} 件</div><table><thead><tr><th>ID</th><th>日時</th><th>数量</th><th>単価</th><th>金額</th><th>状態</th></tr></thead><tbody>${orders.map(o => `<tr><td>${o.id}</td><td>${new Date(o.date).toLocaleString('ja-JP')}</td><td>${o.quantity}</td><td>${yen(o.unitPrice)}</td><td>${yen(o.amount)}</td><td>${o.isActive ? '完了' : '取消済み'}</td></tr>`).join('') || '<tr><td colspan="6">売上はありません</td></tr>'}</tbody></table></article>`;
   } else {
     app.innerHTML = `<div class="page-heading">${back('history', '売上履歴へ')}<span class="step">SETTINGS / 価格設定</span></div><div class="checkout-layout"><section class="settings-copy"><span class="eyebrow">UNIT PRICE</span><h1>1セットの価格</h1><p>変更した価格は、次の注文から適用されます。<br>過去の売上の単価・金額は変わりません。</p><div class="current-price"><span>現在の価格</span><strong>${yen(unitPrice)}</strong><small> / セット</small></div></section><section class="input-panel"><div class="received-display"><span>新しい価格</span><strong id="price-value">${yen(Number(priceInput))}</strong></div>${keypad()}<button class="primary wide" id="save-price" ${Number(priceInput) < 1 ? 'disabled' : ''}>価格を変更する <span>✓</span></button><p class="hint">1〜999,999円で設定できます。</p></section></div>`;
   }
@@ -66,11 +71,12 @@ app.addEventListener('click', async event => {
   const button = event.target.closest('button');
   if (!button || button.disabled || busy || !ready) return;
   try {
+    if (button.id === 'print-report') { window.print(); return; }
     if (button.dataset.key) return updateInput(button.dataset.key);
     if (button.dataset.quantity) { quantity = button.dataset.quantity; return await startCheckout(); }
     if (button.dataset.screen) {
       const target = button.dataset.screen;
-      if (target === 'history') { busy = true; render(); try { orders = await getOrders(); } finally { busy = false; } }
+      if (target === 'history' || target === 'report') { busy = true; render(); try { orders = await getOrders(); } finally { busy = false; } }
       if (target === 'settings') priceInput = '';
       screen = target; notify(''); return render();
     }
@@ -97,6 +103,10 @@ document.querySelector('#confirm-cancel').addEventListener('click', async () => 
   try { await cancelOrder(pendingCancel); dialog.close(); pendingCancel = null; orders = await getOrders(); notify('会計を取り消しました。'); }
   catch { document.querySelector('#cancel-error').textContent = '処理に失敗しました。履歴を確認して再試行してください。'; }
   finally { busy = false; dialog.querySelectorAll('button').forEach(b => { b.disabled = false; }); render(); }
+});
+document.querySelector('#home').addEventListener('click', () => {
+  if (busy || !ready || dialog.open) return;
+  screen = 'quantity'; received = ''; notify(''); render();
 });
 dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
 window.addEventListener('online', connection); window.addEventListener('offline', connection);
