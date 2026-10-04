@@ -16,7 +16,7 @@
     <header><button class="brand" id="home" aria-label="zansin学祭POS セット数選択へ"><strong>zansin学祭POS</strong></button><div class="header-right"><span id="connection" class="connection">起動中</span><span id="today"></span></div></header>
     <main id="app" aria-busy="true"><p class="loading">レジを準備しています…</p></main>
     <div id="message" role="status" aria-live="polite" hidden></div>
-    <footer><span id="storage-status">この端末に売上を保存します</span></footer>
+    <footer><button id="update-app" hidden>最新版に更新</button><span id="storage-status">この端末に売上を保存します</span></footer>
   </div>
   <dialog id="cancel-dialog"><form method="dialog"><span class="eyebrow">CANCEL ORDER</span><h2>この会計を取り消しますか？</h2><p id="cancel-description"></p><p class="muted">履歴は残り、売上の集計から除外されます。</p><div class="dialog-actions"><button value="close">キャンセル</button><button type="button" id="confirm-cancel" class="danger">取り消す</button></div><p id="cancel-error" role="alert"></p></form></dialog>
   <script type="module" src="./app.js"></script>

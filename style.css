@@ -14,8 +14,15 @@
 #next{min-height:96px;font-size:26px;justify-content:center;gap:24px}
 #message{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);width:max-content;max-width:calc(100% - 32px);z-index:10;margin:0;box-shadow:0 4px 20px #203e3520;pointer-events:none}
 footer{justify-content:flex-end;min-height:48px}
+footer{align-items:center;gap:16px}
+#update-app{min-height:44px;padding:8px 14px;font-size:12px}
 .report-controls{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:24px 0}
 .report-controls p{font-size:13px;color:#647466}
+.cloud-panel{max-width:740px;margin:24px auto;padding:28px;background:#eceee6;border-radius:16px}
+.cloud-panel form{display:grid;gap:20px;margin-top:24px}.cloud-panel label{display:grid;gap:10px;font-size:16px}
+.cloud-panel input{font:inherit;padding:16px;border:1px solid #bdc9bb;border-radius:10px;min-height:56px;width:100%;background:white}
+.cloud-actions{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}.device-name{margin-top:24px;font-size:20px}
+.actions{flex-wrap:wrap;justify-content:flex-end}
 .report{background:white;padding:28px;margin-bottom:24px;color:#172c24}
 .report h1{font-size:24px;margin:0 0 16px}.report p{font-size:12px;margin:6px 0}
 .report-totals{font-size:18px;font-weight:700;margin:24px 0;padding:16px 0;border-block:1px solid #aab4ac}

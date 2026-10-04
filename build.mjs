@@ -1,7 +1,7 @@
 import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 
-const files = ['index.html', 'style.css', 'app.js', 'logic.js', 'db.js', 'manifest.webmanifest', 'icon.svg'];
+const files = ['index.html', 'style.css', 'app.js', 'logic.js', 'db.js', 'cloud.js', 'manifest.webmanifest', 'icon.svg'];
 await mkdir('dist', { recursive: true });
 const hash = createHash('sha256');
 for (const file of files) {
