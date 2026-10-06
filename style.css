@@ -23,6 +23,7 @@ footer{align-items:center;gap:16px}
 .cloud-panel input{font:inherit;padding:16px;border:1px solid #bdc9bb;border-radius:10px;min-height:56px;width:100%;background:white}
 .cloud-actions{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}.device-name{margin-top:24px;font-size:20px}
 .actions{flex-wrap:wrap;justify-content:flex-end}
+.cloud-indicator{background:#e8ede3;padding:8px 12px;border-radius:20px;font-size:11px}.cloud-indicator.pending{background:#f3ead8;color:#7a5a24}.cloud-indicator.warn{background:#f6e1d7;color:#9c412b;font-weight:700}
 .report{background:white;padding:28px;margin-bottom:24px;color:#172c24}
 .report h1{font-size:24px;margin:0 0 16px}.report p{font-size:12px;margin:6px 0}
 .report-totals{font-size:18px;font-weight:700;margin:24px 0;padding:16px 0;border-block:1px solid #aab4ac}

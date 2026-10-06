@@ -42,8 +42,20 @@ function cloudStatus() {
   const el = document.querySelector('#cloud-status');
   if (el) el.textContent = `${cloudState.message} · 未送信 ${cloudState.pending}件${cloudState.meta?.lastBackup ? ` · 最終送信 ${new Date(cloudState.meta.lastBackup).toLocaleString('ja-JP')}` : ''}`;
 }
+function cloudIndicator() {
+  const el = document.querySelector('#cloud-indicator'), meta = cloudState.meta;
+  el.hidden = !meta;
+  if (!meta) return;
+  const [text, state] = !meta.enabled ? ['☁ バックアップ未開始', 'warn']
+    : cloudState.needsLogin ? ['☁ 要ログイン', 'warn']
+    : cloudState.running ? ['☁ 送信中…', '']
+    : cloudState.pending ? [`☁ 未送信 ${cloudState.pending}件`, 'pending']
+    : ['☁ 送信済み', ''];
+  el.textContent = text; el.className = `cloud-indicator ${state}`;
+}
 let lastCloudOwner = null;
 onCloudChange(() => {
+  cloudIndicator();
   const changed = lastCloudOwner !== cloudState.owner; lastCloudOwner = cloudState.owner;
   if (changed && screen === 'cloud' && !busy) render(); else cloudStatus();
 });

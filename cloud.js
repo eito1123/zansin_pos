@@ -1,5 +1,5 @@
 import { getCloudMeta, changeMeta, getOrders, acknowledgeOrder, acknowledgePrice, enableBackup, restoreBackup } from './db.js';
-export const cloudState = { owner: null, running: false, message: '未ログイン', meta: null, pending: 0 };
+export const cloudState = { owner: null, running: false, message: '未ログイン', meta: null, pending: 0, needsLogin: false };
 let observer = () => {};
 export function onCloudChange(fn) { observer = fn; }
 export async function refreshCloudState() {
@@ -11,9 +11,10 @@ export async function api(action, data = {}) {
   const response = await fetch('/api/cloud', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...data }), signal: AbortSignal.timeout(20000) });
   const result = await response.json().catch(() => ({ error: 'クラウド設定が未完了、または通信できません。' }));
   if (!response.ok) {
-    if (response.status === 401) cloudState.owner = null;
+    if (response.status === 401) { cloudState.owner = null; cloudState.needsLogin = true; }
     throw new Error(result.error || 'クラウド処理に失敗しました。');
   }
+  cloudState.needsLogin = action === 'logout';
   return result;
 }
 async function exclusive(work) {
