@@ -9,7 +9,7 @@ http.createServer(async (req, res) => {
   try {
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     if (pathname === '/api/cloud') return await cloudHandler(req, res);
-    const allowed = ['/', '/index.html', '/app.js', '/db.js', '/logic.js', '/cloud.js', '/style.css', '/sw.js', '/manifest.webmanifest', '/icon.svg'];
+    const allowed = ['/', '/index.html', '/app.js', '/db.js', '/logic.js', '/cloud.js', '/dashboard.html', '/dashboard.js', '/style.css', '/sw.js', '/manifest.webmanifest', '/icon.svg'];
     if (!allowed.includes(pathname)) { res.writeHead(404); res.end('Not found'); return; }
     const file = path.resolve(root, '.' + (pathname === '/' ? '/index.html' : pathname));
     if (!file.startsWith(root + path.sep) || !types[path.extname(file)]) { res.writeHead(404); res.end(); return; }

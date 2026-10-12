@@ -31,7 +31,6 @@ async function upstream(cfg, route, { token, body, method = 'POST' } = {}) {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     if (response.status === 429) throw fail(429, '試行回数が多いため、少し待って再試行してください。');
-    if (data?.code === '40001') throw fail(409, '価格のバックアップが競合しています。旧端末を停止し、管理者に確認してください。');
     throw fail(response.status === 401 || response.status === 403 ? 401 : 502, 'クラウド処理に失敗しました。再ログインまたは設定を確認してください。');
   }
   return data;
@@ -91,12 +90,13 @@ export default async function handler(req, res) {
       if (!o) throw fail(400, 'Order required');
       return send(200, await rpc('pos_backup_order', { p_order_id: o.backupId, p_source_device_id: o.sourceDeviceId, p_source_local_id: o.sourceLocalId, p_ordered_at_ms: o.date, p_unit_price: o.unitPrice, p_quantity: o.quantity, p_is_active: o.isActive }));
     }
-    if (body.action === 'price') return send(200, await rpc('pos_backup_price', { p_current_unit_price: body.price, p_expected_revision: body.revision, p_mutation_id: body.mutationId, p_source_device_id: body.deviceId }));
-    if (body.action === 'settings') return send(200, await call('/rest/v1/pos_backup_settings?select=*&limit=1', { method: 'GET' }));
+    if (body.action === 'devices') return send(200, await call('/rest/v1/pos_backup_devices?select=device_id,name,registered_at,last_seen_at&order=registered_at.asc', { method: 'GET' }));
     if (body.action === 'orders') {
       const after = body.after || '';
       if (after && !/^[a-f0-9-]{36}$/i.test(after)) throw fail(400, 'Invalid cursor');
-      return send(200, await call(`/rest/v1/pos_backup_orders?select=*&order=order_id.asc&limit=500${after ? `&order_id=gt.${after}` : ''}`, { method: 'GET' }));
+      const device = body.deviceId || '';
+      if (device && !/^[a-f0-9-]{36}$/i.test(device)) throw fail(400, 'Invalid device');
+      return send(200, await call(`/rest/v1/pos_backup_orders?select=*&order=order_id.asc&limit=500${device ? `&source_device_id=eq.${device}` : ''}${after ? `&order_id=gt.${after}` : ''}`, { method: 'GET' }));
     }
     throw fail(400, 'Unknown action');
   } catch (error) { send(error.status || 500, { error: error.status ? error.message : '処理に失敗しました。再試行してください。' }); }

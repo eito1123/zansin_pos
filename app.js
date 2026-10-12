@@ -1,12 +1,13 @@
 import { yen, appendDigit, summarize, makeOrder, csv } from './logic.js';
 import { openDatabase, getPrice, setPrice, getOrders, saveOrder, cancelOrder } from './db.js';
-import { cloudState, onCloudChange, initCloud, refreshCloudState, loginCloud, logoutCloud, startBackup, syncCloud, restoreCloud } from './cloud.js';
+import { cloudState, onCloudChange, initCloud, refreshCloudState, loginCloud, logoutCloud, startBackup, syncCloud, restoreCloud, listRestoreSources } from './cloud.js';
 
 const app = document.querySelector('#app');
 const message = document.querySelector('#message');
 const dialog = document.querySelector('#cancel-dialog');
 let screen = 'quantity', quantity = '', received = '', priceInput = '', unitPrice = 300, checkoutPrice = 300;
 let orders = [], busy = false, ready = false, pendingCancel = null, offlineReady = false;
+let restoreSources = null, restoreSelected = new Set();
 let swRegistration, reloadPending = false, reloading = false;
 const updateButton = document.querySelector('#update-app');
 const canUpdate = () => ready && !busy && screen === 'quantity' && quantity === '' && !dialog.open;
@@ -36,7 +37,11 @@ function connection() {
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function cloudPanel() {
   const meta = cloudState.meta;
-  return `<div class="page-heading">${back('history', '売上履歴へ')}<h1>バックアップ</h1></div><section class="cloud-panel"><p id="cloud-status" role="status"></p><p class="hint">通信やログインの状態にかかわらず、会計は端末内に保存します。</p>${!cloudState.owner ? `<form id="cloud-login"><label>端末名<input id="device-name" required maxlength="80" autocomplete="off" value="${escapeHtml(meta?.deviceName)}" placeholder="例：田中のiPad"></label><label>共通パスワード<input id="cloud-password" type="password" required maxlength="256" autocomplete="current-password"></label><button class="primary" type="submit">ログイン</button></form>` : `<p class="device-name">端末：${escapeHtml(meta?.deviceName)}</p><div class="cloud-actions">${meta?.enabled ? '<button id="sync-cloud" class="primary">今すぐバックアップ</button>' : '<button id="enable-cloud" class="primary">この端末のバックアップを開始</button><button id="restore-cloud">交換前の端末から復元</button>'}<button id="logout-cloud">ログアウト</button></div><p class="hint">端末交換時は旧端末の未送信が0件になったことを確認し、旧端末での会計を停止してください。復元は売上が空の端末でのみ実行できます。</p>`}</section>`;
+  return `<div class="page-heading">${back('history', '売上履歴へ')}<h1>バックアップ</h1></div><section class="cloud-panel"><p id="cloud-status" role="status"></p><p class="hint">通信やログインの状態にかかわらず、会計は端末内に保存します。</p>${!cloudState.owner ? `<form id="cloud-login"><label>端末名<input id="device-name" required maxlength="80" autocomplete="off" value="${escapeHtml(meta?.deviceName)}" placeholder="例：田中のiPad"></label><label>共通パスワード<input id="cloud-password" type="password" required maxlength="256" autocomplete="current-password"></label><button class="primary" type="submit">ログイン</button></form>` : `<p class="device-name">端末：${escapeHtml(meta?.deviceName)}</p>${restoreSources && !meta?.enabled ? restorePicker() : `<div class="cloud-actions">${meta?.enabled ? '<button id="sync-cloud" class="primary">今すぐバックアップ</button>' : '<button id="enable-cloud" class="primary">この端末のバックアップを開始</button><button id="restore-cloud">交換前の端末から復元</button>'}<button id="logout-cloud">ログアウト</button></div><p class="hint">端末交換時は旧端末の未送信が0件になったことを確認し、旧端末での会計を停止してください。復元は売上が空の端末でのみ実行できます。</p>`}`}</section>`;
+}
+function restorePicker() {
+  const seen = d => d.last_seen_at ? new Date(d.last_seen_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  return `<h2 class="restore-title">復元元の端末を選択</h2><p class="hint">交換前の端末を選んでください。交換を繰り返した場合は、それ以前の端末もすべて選びます。選んだ端末の売上だけをこの端末へ復元します。</p><div class="restore-list">${restoreSources.length ? restoreSources.map(d => `<button class="restore-device ${restoreSelected.has(d.device_id) ? 'selected' : ''}" data-restore-device="${escapeHtml(d.device_id)}" aria-pressed="${restoreSelected.has(d.device_id)}"><span class="check">${restoreSelected.has(d.device_id) ? '✓' : ''}</span><strong>${escapeHtml(d.name)}</strong><small>最終通信 ${seen(d)}</small></button>`).join('') : '<p class="empty">復元できる端末がありません。</p>'}</div><div class="cloud-actions"><button id="confirm-restore" class="primary" ${restoreSelected.size ? '' : 'disabled'}>選択した${restoreSelected.size || ''}台から復元</button><button id="cancel-restore">やめる</button></div>`;
 }
 function cloudStatus() {
   const el = document.querySelector('#cloud-status');
@@ -72,7 +77,7 @@ function render() {
     app.innerHTML = `<div class="page-heading">${back('quantity', '数量入力へ')}</div><div class="checkout-layout"><section class="bill-panel"><h1>お会計</h1><div class="bill-total">${yen(total)}</div><p class="bill-detail">${quantity} セット <span>×</span> ${yen(checkoutPrice)}</p><div class="change-box"><span>お釣り</span><strong id="change">${received && change >= 0 ? yen(change) : '—'}</strong><small id="shortfall">${received && change < 0 ? `${yen(-change)} 不足しています` : ''}</small></div></section><section class="input-panel"><div class="received-display"><span>お預かり</span><strong id="received-value">${received ? yen(Number(received)) : '¥0'}</strong></div>${keypad()}<button class="primary wide" id="complete" ${received !== '' && change < 0 ? 'disabled' : ''}>会計完了 <span>✓</span></button><p class="hint completion-hint">お預かり未入力なら、計算せず完了</p></section></div>`;
   } else if (screen === 'history') {
     const today = summarize(orders, new Date());
-    app.innerHTML = `<div class="page-heading"><div>${back('quantity', 'レジに戻る')}<h1>売上履歴</h1></div><div class="actions"><button data-screen="cloud">バックアップ</button><button data-screen="settings">価格設定</button><button id="export-csv">CSV出力 ↓</button><button id="export-json">JSON出力 ↓</button><button data-screen="report">PDF出力 ↓</button></div></div><div class="stats"><div><span>本日売上</span><strong>${yen(today.amount)}</strong></div><div><span>販売セット数</span><strong>${today.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${today.count}<small> 件</small></strong></div></div><div class="table-heading"><h2>すべての会計</h2><span>新しい順 · 取消済みを含む ${orders.length} 件</span></div><div class="table-scroll"><table><thead><tr><th>日時</th><th>数量</th><th>当時の単価</th><th>会計金額</th><th>状態</th><th></th></tr></thead><tbody>${orders.length ? orders.map(o => `<tr class="${o.isActive ? '' : 'cancelled'}"><td>${new Date(o.date).toLocaleString('ja-JP', { year: 'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</td><td>${o.quantity} セット</td><td>${yen(o.unitPrice)}</td><td class="amount-cell">${yen(o.amount)}</td><td><span class="badge ${o.isActive ? '' : 'inactive'}">${o.isActive ? '完了' : '取消済み'}</span></td><td>${o.isActive ? `<button class="cancel-button" data-cancel="${o.id}">取消</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">売上はまだありません。最初の会計をはじめましょう。</td></tr>'}</tbody></table></div><p class="hint">集計はこの端末の本日分です。出力には全期間・取消済みの会計も含まれます。</p>`;
+    app.innerHTML = `<div class="page-heading"><div>${back('quantity', 'レジに戻る')}<h1>売上履歴</h1></div><div class="actions"><a class="link-button" href="./dashboard.html">全端末の集計 ↗</a><button data-screen="cloud">バックアップ</button><button data-screen="settings">価格設定</button><button id="export-csv">CSV出力 ↓</button><button id="export-json">JSON出力 ↓</button><button data-screen="report">PDF出力 ↓</button></div></div><div class="stats"><div><span>本日売上</span><strong>${yen(today.amount)}</strong></div><div><span>販売セット数</span><strong>${today.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${today.count}<small> 件</small></strong></div></div><div class="table-heading"><h2>すべての会計</h2><span>新しい順 · 取消済みを含む ${orders.length} 件</span></div><div class="table-scroll"><table><thead><tr><th>日時</th><th>数量</th><th>当時の単価</th><th>会計金額</th><th>状態</th><th></th></tr></thead><tbody>${orders.length ? orders.map(o => `<tr class="${o.isActive ? '' : 'cancelled'}"><td>${new Date(o.date).toLocaleString('ja-JP', { year: 'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</td><td>${o.quantity} セット</td><td>${yen(o.unitPrice)}</td><td class="amount-cell">${yen(o.amount)}</td><td><span class="badge ${o.isActive ? '' : 'inactive'}">${o.isActive ? '完了' : '取消済み'}</span></td><td>${o.isActive ? `<button class="cancel-button" data-cancel="${o.id}">取消</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">売上はまだありません。最初の会計をはじめましょう。</td></tr>'}</tbody></table></div><p class="hint">集計はこの端末の本日分です。出力には全期間・取消済みの会計も含まれます。</p>`;
   } else if (screen === 'cloud') {
     app.innerHTML = cloudPanel(); cloudStatus();
   } else if (screen === 'report') {
@@ -120,15 +125,25 @@ app.addEventListener('click', async event => {
   const button = event.target.closest('button');
   if (!button || button.disabled || busy || !ready) return;
   try {
-    if (['sync-cloud','enable-cloud','restore-cloud','logout-cloud'].includes(button.id)) {
-      if (button.id === 'enable-cloud' && !confirm('この端末の売上と現在価格をバックアップします。端末交換で過去の売上を引き継ぐ場合は、キャンセルして「復元」を選んでください。')) return;
-      if (button.id === 'restore-cloud' && !confirm('旧端末のバックアップ完了と会計停止を確認しましたか？全期間の売上と価格をこの端末へ復元します。')) return;
+    if (button.dataset.restoreDevice) {
+      const id = button.dataset.restoreDevice;
+      if (!restoreSelected.delete(id)) restoreSelected.add(id);
+      return render();
+    }
+    if (button.id === 'cancel-restore') { restoreSources = null; restoreSelected.clear(); return render(); }
+    if (['sync-cloud','enable-cloud','restore-cloud','confirm-restore','logout-cloud'].includes(button.id)) {
+      if (button.id === 'enable-cloud' && !confirm('この端末の売上をバックアップします。端末交換で過去の売上を引き継ぐ場合は、キャンセルして「復元」を選んでください。')) return;
+      if (button.id === 'confirm-restore') {
+        const names = restoreSources.filter(d => restoreSelected.has(d.device_id)).map(d => d.name).join('、');
+        if (!confirm(`旧端末のバックアップ完了と会計停止を確認しましたか？\n「${names}」の全期間の売上をこの端末へ復元します。価格は復元されません。`)) return;
+      }
       busy = true; render();
       try {
         if (button.id === 'sync-cloud') await syncCloud();
         if (button.id === 'enable-cloud') await startBackup();
-        if (button.id === 'logout-cloud') await logoutCloud();
-        if (button.id === 'restore-cloud') { await restoreCloud(); [unitPrice, orders] = await Promise.all([getPrice(), getOrders()]); }
+        if (button.id === 'logout-cloud') { await logoutCloud(); restoreSources = null; restoreSelected.clear(); }
+        if (button.id === 'restore-cloud') { restoreSources = await listRestoreSources(); restoreSelected.clear(); }
+        if (button.id === 'confirm-restore') { await restoreCloud([...restoreSelected]); restoreSources = null; restoreSelected.clear(); orders = await getOrders(); }
       } catch (e) { notify(e.message, true); }
       finally { busy = false; render(); }
       return;
@@ -141,6 +156,7 @@ app.addEventListener('click', async event => {
       if (target === 'history' || target === 'report') { busy = true; render(); try { orders = await getOrders(); } finally { busy = false; } }
       if (target === 'settings') priceInput = '';
       if (target === 'cloud') await refreshCloudState();
+      restoreSources = null; restoreSelected.clear();
       screen = target; notify(''); return render();
     }
     if (button.id === 'next' && Number(quantity) >= 1) {

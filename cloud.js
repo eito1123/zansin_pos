@@ -1,10 +1,10 @@
-import { getCloudMeta, changeMeta, getOrders, acknowledgeOrder, acknowledgePrice, enableBackup, restoreBackup } from './db.js';
+import { getCloudMeta, changeMeta, getOrders, acknowledgeOrder, enableBackup, restoreBackup } from './db.js';
 export const cloudState = { owner: null, running: false, message: '未ログイン', meta: null, pending: 0, needsLogin: false };
 let observer = () => {};
 export function onCloudChange(fn) { observer = fn; }
 export async function refreshCloudState() {
   cloudState.meta = await getCloudMeta();
-  cloudState.pending = (await getOrders()).filter(o => o.version > o.syncedVersion).length + cloudState.meta.queue.length;
+  cloudState.pending = (await getOrders()).filter(o => o.version > o.syncedVersion).length;
   observer();
 }
 export async function api(action, data = {}) {
@@ -42,8 +42,7 @@ export async function startBackup() {
     const user = await api('status'), meta = await getCloudMeta(); bindOwner(user.owner, meta);
     if (!meta.deviceName) throw new Error('端末名を登録してください。');
     await api('device', { deviceId: meta.deviceId, name: meta.deviceName });
-    const settings = await api('settings');
-    await enableBackup(user.owner, settings[0]?.revision || 0); cloudState.owner = user.owner;
+    await enableBackup(user.owner); cloudState.owner = user.owner;
   });
   await syncCloud();
 }
@@ -59,35 +58,36 @@ export async function syncCloud() {
       for (const order of (await getOrders()).filter(o => o.version > o.syncedVersion)) {
         const remote = await api('order', { order }); await acknowledgeOrder(order, remote);
       }
-      for (const item of meta.queue) {
-        const latest = await getCloudMeta(); if (latest.queue[0]?.id !== item.id) continue;
-        const result = await api('price', { price: item.price, revision: latest.revision, mutationId: item.id, deviceId: meta.deviceId });
-        await acknowledgePrice(item.id, result.revision);
-      }
       await changeMeta(m => { m.lastBackup = Date.now(); }); cloudState.message = 'バックアップ完了';
     });
   } catch (e) { cloudState.message = e.message || '通信できません。端末内に保存済みです。'; }
   finally { cloudState.running = false; await refreshCloudState(); }
 }
-export async function restoreCloud() {
+export async function listRestoreSources() {
+  const meta = await getCloudMeta(), devices = await api('devices');
+  if (!Array.isArray(devices)) throw new Error('端末一覧を取得できません。');
+  return devices.filter(d => d.device_id !== meta.deviceId);
+}
+export async function restoreCloud(deviceIds) {
+  if (!Array.isArray(deviceIds) || !deviceIds.length) throw new Error('復元元の端末を選択してください。');
   return exclusive(async () => {
     const meta = await getCloudMeta();
     if (meta.enabled || (await getOrders()).length) throw new Error('復元は売上が空の、バックアップ未開始の端末で行ってください。');
     const user = await api('status'); bindOwner(user.owner, meta);
-    const before = await api('settings');
-    let rows = [], after = '';
-    for (;;) {
-      const page = await api('orders', { after });
-      if (!Array.isArray(page)) throw new Error('バックアップを取得できません。');
-      if (!page.length) break;
-      const cursor = page.at(-1).order_id;
-      if (after && cursor <= after) throw new Error('ページ取得に失敗しました。');
-      rows.push(...page); after = cursor;
+    const rows = [];
+    for (const deviceId of new Set(deviceIds)) {
+      for (let after = '';;) {
+        const page = await api('orders', { after, deviceId });
+        if (!Array.isArray(page)) throw new Error('バックアップを取得できません。');
+        if (!page.length) break;
+        const cursor = page.at(-1).order_id;
+        if (after && cursor <= after) throw new Error('ページ取得に失敗しました。');
+        if (page.some(o => o.source_device_id !== deviceId)) throw new Error('選択外の端末の売上が含まれています。復元を中止しました。');
+        rows.push(...page); after = cursor;
+      }
     }
-    const settings = await api('settings');
-    if (JSON.stringify(before) !== JSON.stringify(settings)) throw new Error('復元中に価格が変更されました。旧端末を停止して再試行してください。');
-    await restoreBackup(rows, settings[0], user.owner);
-    cloudState.owner = user.owner; cloudState.message = `${rows.length}件を復元しました。`; await refreshCloudState();
+    await restoreBackup(rows, user.owner);
+    cloudState.owner = user.owner; cloudState.message = `${rows.length}件を復元しました。価格はこの端末の価格設定で確認してください。`; await refreshCloudState();
   });
 }
 export async function initCloud() {

@@ -28,6 +28,12 @@ test('API enforces origin, password authentication, session and fixed RPC routes
       assert.equal(body.p_order_id, 'sale'); assert.equal(body.owner_id, undefined);
       assert.equal(options.headers.Authorization, 'Bearer access'); return Response.json({ is_active:true });
     }
+    if (url.includes('/rest/v1/pos_backup_orders?')) {
+      return Response.json(url.includes('source_device_id=eq.aaaaaaaa-0000-4000-8000-000000000001') ? [{ order_id:'filtered' }] : [{ order_id:'all' }]);
+    }
+    if (url.includes('/rest/v1/pos_backup_devices?')) {
+      assert.equal(options.method, 'GET'); return Response.json([{ device_id:'d1', name:'iPad A' }]);
+    }
     throw new Error('Unexpected upstream route');
   };
   const call = async (body, extra = {}) => {
@@ -46,6 +52,12 @@ test('API enforces origin, password authentication, session and fixed RPC routes
     const cookie = login.headers['Set-Cookie'].split(';')[0];
     assert.equal((await call({action:'order',order:{backupId:'sale'},owner_id:'attacker'},{cookie})).statusCode,200);
     assert.equal((await call({action:'arbitrarySQL'},{cookie})).statusCode,400);
+    assert.deepEqual((await call({action:'devices'},{cookie})).body,[{ device_id:'d1', name:'iPad A' }]);
+    assert.equal((await call({action:'price',price:1},{cookie})).statusCode,400);
+    assert.deepEqual((await call({action:'orders',deviceId:'aaaaaaaa-0000-4000-8000-000000000001'},{cookie})).body,[{ order_id:'filtered' }]);
+    assert.deepEqual((await call({action:'orders'},{cookie})).body,[{ order_id:'all' }]);
+    assert.equal((await call({action:'orders',deviceId:'x&owner_id=neq.0'},{cookie})).statusCode,400);
+    assert.equal((await call({action:'settings'},{cookie})).statusCode,400);
     const expired = '__Host-pos_session=' + seal({access:'expired',refresh:'refresh',expires:0,owner:'owner'},key);
     assert.equal((await call({action:'status'},{cookie:expired})).statusCode,200);
     assert.equal(refreshed,true);

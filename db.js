@@ -29,7 +29,9 @@ export async function openDatabase() {
   await run(['orders', 'settings'], 'readwrite', async tx => {
     const settings = tx.objectStore('settings'), store = tx.objectStore('orders');
     let meta = await request(settings.get('cloud'));
-    if (!meta) { meta = { deviceId: uuid(), deviceName: '', enabled: false, owner: null, revision: 0, queue: [], lastBackup: null }; settings.put(meta, 'cloud'); }
+    if (!meta) { meta = { deviceId: uuid(), deviceName: '', enabled: false, owner: null, lastBackup: null }; settings.put(meta, 'cloud'); }
+    // Prices are local-only now; drop the price backup queue left by older versions.
+    if ('queue' in meta || 'revision' in meta) { delete meta.queue; delete meta.revision; settings.put(meta, 'cloud'); }
     for (const order of await request(store.getAll())) {
       if (!order.backupId) store.put({ ...order, backupId: uuid(), sourceDeviceId: meta.deviceId, sourceLocalId: order.id, version: 1, syncedVersion: 0 });
     }
@@ -41,11 +43,7 @@ export const getOrders = () => run(['orders'], 'readonly', async tx => (await re
 export const changeMeta = mutate => run(['settings'], 'readwrite', async tx => {
   const s = tx.objectStore('settings'), m = await request(s.get('cloud')); mutate(m); s.put(m, 'cloud'); return m;
 });
-export const setPrice = price => run(['settings'], 'readwrite', async tx => {
-  const s = tx.objectStore('settings'), meta = await request(s.get('cloud'));
-  s.put(price, 'currentUnitPrice');
-  if (meta.enabled) { meta.queue.push({ id: uuid(), price }); s.put(meta, 'cloud'); }
-});
+export const setPrice = price => run(['settings'], 'readwrite', tx => { tx.objectStore('settings').put(price, 'currentUnitPrice'); });
 export const saveOrder = order => run(['orders','settings'], 'readwrite', async tx => {
   const meta = await request(tx.objectStore('settings').get('cloud')), s = tx.objectStore('orders');
   const row = { ...order, backupId: uuid(), sourceDeviceId: meta.deviceId, version: 1, syncedVersion: 0 };
@@ -62,37 +60,26 @@ export const acknowledgeOrder = (sent, remote) => run(['orders'], 'readwrite', a
   if (remote.is_active === false) current.isActive = false;
   s.put(current);
 });
-export const acknowledgePrice = (id, revision) => changeMeta(meta => {
-  if (meta.queue[0]?.id === id) { meta.queue.shift(); meta.revision = revision; }
-});
-export const enableBackup = (owner, revision) => run(['orders','settings'], 'readwrite', async tx => {
-  const s = tx.objectStore('settings'), meta = await request(s.get('cloud'));
+export const enableBackup = owner => changeMeta(meta => {
   if (meta.owner && meta.owner !== owner) throw new Error('別の運営アカウントへは切り替えできません。');
-  meta.owner = owner;
-  if (!meta.enabled) {
-    meta.enabled = true; meta.revision = revision;
-    meta.queue = [{ id: uuid(), price: await request(s.get('currentUnitPrice')) }];
-  }
-  s.put(meta, 'cloud');
+  meta.owner = owner; meta.enabled = true;
 });
-export function validateRestore(rows, settings) {
+export function validateRestore(rows) {
   const ids = new Set(), origins = new Set();
   const isUuid = v => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
-  if (!settings || !Number.isSafeInteger(settings.current_unit_price) || settings.current_unit_price < 1 || settings.current_unit_price > 999999 || !Number.isSafeInteger(settings.revision) || settings.revision < 1) throw new Error('価格バックアップがありません。旧端末でバックアップを完了してください。');
   for (const o of rows) {
     const origin = `${o.source_device_id}/${o.source_local_id}`;
     if (!isUuid(o.order_id) || !isUuid(o.source_device_id) || ids.has(o.order_id) || origins.has(origin) || !Number.isSafeInteger(o.source_local_id) || o.source_local_id < 1 || !Number.isSafeInteger(o.ordered_at_ms) || o.ordered_at_ms < 0 || o.ordered_at_ms > 8640000000000000 || !Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 999 || !Number.isInteger(o.unit_price) || o.unit_price < 1 || o.unit_price > 999999 || o.amount !== o.quantity * o.unit_price || typeof o.is_active !== 'boolean') throw new Error('バックアップの内容が不正です。復元を中止しました。');
     ids.add(o.order_id); origins.add(origin);
   }
 }
-export const restoreBackup = (rows, settings, owner) => {
-  validateRestore(rows, settings);
+export const restoreBackup = (rows, owner) => {
+  validateRestore(rows);
   return run(['orders','settings'], 'readwrite', async tx => {
     const s = tx.objectStore('settings'), o = tx.objectStore('orders'), meta = await request(s.get('cloud'));
     if (await request(o.count()) || meta.enabled || (meta.owner && meta.owner !== owner)) throw new Error('復元は売上のない、バックアップ未開始の端末で実行してください。');
     for (const r of rows) o.add({ backupId: r.order_id, sourceDeviceId: r.source_device_id, sourceLocalId: r.source_local_id, date: r.ordered_at_ms, unitPrice: r.unit_price, quantity: r.quantity, amount: r.amount, isActive: r.is_active, version: 1, syncedVersion: 1 });
-    s.put(settings.current_unit_price, 'currentUnitPrice');
-    Object.assign(meta, { owner, enabled: true, revision: settings.revision, queue: [], lastBackup: Date.now() });
+    Object.assign(meta, { owner, enabled: true, lastBackup: Date.now() });
     s.put(meta, 'cloud');
   });
 };

@@ -1,7 +1,7 @@
 const { chromium } = require(process.env.POS_NODE_MODULES + '/playwright');
 const assert = require('node:assert/strict');
 const owner='11111111-1111-4111-8111-111111111111';
-const remote = new Map(); let price, failOrder=false, holdOrder, releaseOrder;
+const remote = new Map(); let failOrder=false, holdOrder, releaseOrder;
 const devices=new Map();
 async function setup(browser) {
   const context=await browser.newContext({serviceWorkers:'block',viewport:{width:1024,height:768}});
@@ -14,18 +14,14 @@ async function setup(browser) {
     if(b.action==='logout'){loggedIn=false;return send(200,{ok:true});}
     if(b.action==='status')data={owner};
     if(b.action==='device'){devices.set(b.deviceId,b.name);data={name:b.name};}
-    if(b.action==='settings')data=price?[price]:[];
-    if(b.action==='price'){
-      if(price?.mutation_id===b.mutationId)data=price;
-      else {if((price?.revision||0)!==b.revision)return send(409,{error:'価格競合'});price={current_unit_price:b.price,revision:b.revision+1,mutation_id:b.mutationId};data=price;}
-    }
     if(b.action==='order'){
       if(failOrder)return send(503,{error:'通信失敗'});
       if(holdOrder){holdOrder();await new Promise(resolve=>releaseOrder=resolve);holdOrder=null;}
       const o=b.order,old=remote.get(o.backupId);
       data={order_id:o.backupId,source_device_id:o.sourceDeviceId,source_local_id:o.sourceLocalId,ordered_at_ms:o.date,unit_price:o.unitPrice,quantity:o.quantity,amount:o.amount,is_active:old?.is_active===false?false:o.isActive};remote.set(o.backupId,data);
     }
-    if(b.action==='orders')data=[...remote.values()].sort((a,b)=>a.order_id.localeCompare(b.order_id)).filter(o=>!b.after||o.order_id>b.after).slice(0,1); // force pagination
+    if(b.action==='devices')data=[...devices].map(([device_id,name])=>({device_id,name,last_seen_at:new Date().toISOString()}));
+    if(b.action==='orders')data=[...remote.values()].sort((a,b)=>a.order_id.localeCompare(b.order_id)).filter(o=>(!b.deviceId||o.source_device_id===b.deviceId)&&(!b.after||o.order_id>b.after)).slice(0,1); // force pagination
     return send(200,data);
   });
   const page=await context.newPage();await page.goto('http://localhost:4173');await page.locator('#next').waitFor();
@@ -67,12 +63,15 @@ async function login(page,name){
     await p.evaluate(async()=>{const c=await import('/cloud.js');await c.syncCloud();await c.syncCloud();});
     assert.equal(remote.size,2);assert.equal(remote.get(pending.backupId).is_active,false);
     const {page:p2}=await setup(browser);await login(p2,'交換後のiPad');p2.on('dialog',d=>d.accept());
-    await p2.locator('#restore-cloud').click();await p2.locator('#sync-cloud').waitFor();
+    await p2.locator('#restore-cloud').click();await p2.locator('[data-restore-device]').first().waitFor();
+    assert.equal(await p2.locator('[data-restore-device]').count(),1); // own device is not offered
+    assert.equal(await p2.locator('#confirm-restore').isDisabled(),true);
+    await p2.locator('[data-restore-device]').click();await p2.locator('#confirm-restore').click();await p2.locator('#sync-cloud').waitFor();
     const restored=await p2.evaluate(async()=> (await import('/db.js')).getOrders());
     assert.equal(restored.length,2);assert.equal(restored.find(o=>o.backupId===pending.backupId).isActive,false);
     assert.equal(restored.find(o=>o.backupId===original.backupId).sourceDeviceId,original.sourceDeviceId);
     assert.equal(devices.size,2);
-    assert.equal(await p2.evaluate(async()=>{try{await (await import('/cloud.js')).restoreCloud();return false;}catch{return true;}}),true);
+    assert.equal(await p2.evaluate(async id=>{try{await (await import('/cloud.js')).restoreCloud([id]);return false;}catch{return true;}},original.sourceDeviceId),true);
     assert.equal(await p2.evaluate(async()=> (await (await import('/db.js')).getOrders()).length),2);
     await p2.locator('#home').click();await p2.locator('[data-quantity="1"]').click();await p2.locator('#complete').click();await p2.locator('#next').waitFor();
     const latest=await p2.evaluate(async()=> (await (await import('/db.js')).getOrders())[0]);

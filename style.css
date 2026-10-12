@@ -42,3 +42,29 @@ footer{align-items:center;gap:16px}
   .report thead{display:table-header-group}
 }
 
+
+/* Link styled as a secondary button (history actions) */
+.link-button{display:inline-flex;align-items:center;min-height:48px;padding:12px 22px;border:1px solid var(--line);border-radius:12px;background:#fff;color:inherit;text-decoration:none;font-weight:600;font-size:12px}
+/* All-device dashboard */
+.dash-brand{text-decoration:none;color:inherit;display:flex;align-items:center}
+.header-right button{min-height:44px;padding:8px 16px;font-size:12px}
+.day-tabs button.selected{background:var(--green);border-color:var(--green);color:#fff}
+.dash-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:24px}
+.dash-grid .table-scroll{max-height:none}
+.stale{color:#9c412b;font-weight:700}
+.dash-error{color:#9c412b;margin-top:16px;font-size:14px}
+.hours{display:grid;gap:8px;background:#fffefa;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.hour{display:grid;grid-template-columns:48px 1fr 100px 70px;gap:12px;align-items:center;font-size:13px}
+.hour .bar{height:14px;background:#eceee6;border-radius:7px;overflow:hidden}.hour .bar i{display:block;height:100%;background:var(--green);border-radius:7px}
+.hour strong{text-align:right}.hour small{color:var(--muted);text-align:right}
+@media(max-width:849px){.dash-grid{grid-template-columns:1fr}}
+@media(max-width:600px){.hour{grid-template-columns:40px 1fr 80px}.hour small{display:none}.header-right #updated{display:none}}
+
+/* Restore source picker */
+.restore-title{margin-top:24px;font-size:18px}
+.restore-list{display:grid;gap:10px;margin-top:16px}
+.restore-device{display:grid;grid-template-columns:36px minmax(0,1fr);align-items:center;column-gap:14px;row-gap:2px;min-height:64px;text-align:left;background:#fffefa}
+.restore-device .check{grid-row:span 2;width:28px;height:28px;border:2px solid #bdc9bb;border-radius:8px;display:grid;place-items:center;font-size:18px}
+.restore-device small{grid-column:2;color:var(--muted);font-weight:400;font-size:12px}
+.restore-device.selected{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
+.restore-device.selected .check{background:var(--green);border-color:var(--green);color:#fff}
