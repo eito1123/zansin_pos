@@ -71,20 +71,14 @@ function render() {
 <section><div class="table-heading"><h2>単価別</h2><span>会計時点の単価で集計</span></div><div class="table-scroll"><table><thead><tr><th>単価</th><th>セット</th><th>売上</th></tr></thead><tbody>${byPrice.length ? byPrice.map(([price, list]) => { const t = totals(list); return `<tr><td>${yen(price)}</td><td>${t.quantity}</td><td class="amount-cell">${yen(t.amount)}</td></tr>`; }).join('') : '<tr><td colspan="3" class="empty">売上はありません。</td></tr>'}</tbody></table></div></section>
 </div>
 <section><div class="table-heading"><h2>時間帯別</h2><span>取消済み ${cancelled} 件は集計から除外</span></div><div class="hours">${byHour.length ? byHour.map(([hour, list]) => { const t = totals(list); return `<div class="hour"><span>${hour}時</span><div class="bar"><i style="width:${(t.amount / maxHour * 100).toFixed(1)}%"></i></div><strong>${yen(t.amount)}</strong><small>${t.quantity}セット</small></div>`; }).join('') : '<p class="empty">売上はありません。</p>'}</div></section>
-<p class="hint">各レジの売上は会計後と約1分ごとに送信されます。オフラインのレジの分は、通信が戻るまで反映されません。</p></div>${report(period, scoped, deviceRows, byPrice)}`;
+<p class="hint">各レジの売上は会計後と約1分ごとに送信されます。オフラインのレジの分は、通信が戻るまで反映されません。</p></div>${report(period)}`;
 }
-// Print-only sales report for the selected period: summaries plus every order (cancelled ones marked, excluded from totals).
-function report(period, scoped, deviceRows, byPrice) {
+// Print-only list of every order in the selected period, oldest first (cancelled ones included and marked).
+function report(period) {
   const names = new Map(devices.map(d => [d.device_id, d.name]));
   const rows = orders.filter(o => selectedDay === 'all' || dayKey(o.ordered_at_ms) === selectedDay).sort((a, b) => a.ordered_at_ms - b.ordered_at_ms || a.order_id.localeCompare(b.order_id));
-  const sum = totals(scoped), byDay = [...groupBy(scoped, o => dayKey(o.ordered_at_ms))].sort((a, b) => a[0].localeCompare(b[0]));
-  const table = (head, body) => `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body.join('') || `<tr><td colspan="${head.length}">売上はありません</td></tr>`}</tbody></table>`;
-  return `<article class="report dash-report"><h1>zansin学祭POS 全端末 売上明細</h1><p>出力日時：${new Date().toLocaleString('ja-JP')}</p><p>対象：${period} ／ 全端末 ／ 合計は取消済みを除外</p>
-<div class="report-totals">売上合計 ${yen(sum.amount)}　 /　 ${sum.quantity} セット　 /　 ${sum.count} 件</div>
-<h2>端末別</h2>${table(['端末', 'セット', '件数', '売上'], deviceRows.filter(d => d.count).map(d => `<tr><td>${escapeHtml(d.name)}</td><td>${d.quantity}</td><td>${d.count}</td><td>${yen(d.amount)}</td></tr>`))}
-${selectedDay === 'all' ? `<h2>日別</h2>${table(['日付', 'セット', '件数', '売上'], byDay.map(([k, list]) => { const t = totals(list); return `<tr><td>${dayLabel(k)}</td><td>${t.quantity}</td><td>${t.count}</td><td>${yen(t.amount)}</td></tr>`; }))}` : ''}
-<h2>単価別</h2>${table(['単価', 'セット', '件数', '売上'], byPrice.map(([price, list]) => { const t = totals(list); return `<tr><td>${yen(price)}</td><td>${t.quantity}</td><td>${t.count}</td><td>${yen(t.amount)}</td></tr>`; }))}
-<h2>明細（${rows.length} 件・取消済みを含む）</h2>${table(['No.', '日時', '端末', '数量', '単価', '金額', '状態'], rows.map((o, i) => `<tr class="${o.is_active ? '' : 'cancelled'}"><td>${i + 1}</td><td>${new Date(o.ordered_at_ms).toLocaleString('ja-JP')}</td><td>${escapeHtml(names.get(o.source_device_id) || '未登録の端末')}</td><td>${o.quantity}</td><td>${yen(o.unit_price)}</td><td>${yen(o.amount)}</td><td>${o.is_active ? '完了' : '取消済み'}</td></tr>`))}</article>`;
+  return `<article class="report dash-report"><h1>zansin学祭POS 全端末 売上明細</h1><p>出力日時：${new Date().toLocaleString('ja-JP')}</p><p>対象：${period} ／ 全端末 ／ ${rows.length} 件（取消済みを含む）</p>
+<table><thead><tr><th>No.</th><th>日時</th><th>端末</th><th>数量</th><th>単価</th><th>金額</th><th>状態</th></tr></thead><tbody>${rows.map((o, i) => `<tr class="${o.is_active ? '' : 'cancelled'}"><td>${i + 1}</td><td>${new Date(o.ordered_at_ms).toLocaleString('ja-JP')}</td><td>${escapeHtml(names.get(o.source_device_id) || '未登録の端末')}</td><td>${o.quantity}</td><td>${yen(o.unit_price)}</td><td>${yen(o.amount)}</td><td>${o.is_active ? '完了' : '取消済み'}</td></tr>`).join('') || '<tr><td colspan="7">売上はありません</td></tr>'}</tbody></table></article>`;
 }
 
 async function load() {

@@ -70,7 +70,6 @@ footer{align-items:center;gap:16px}
 .restore-device.selected .check{background:var(--green);border-color:var(--green);color:#fff}
 /* Dashboard print report: hidden on screen, the only thing printed */
 .print-button{background:var(--green);border-color:var(--green);color:#fff}
-.dash-report h2{font-size:15px;margin:22px 0 8px}
 .dash-report .cancelled td{color:#90958b}
 @media screen{.dash-report{display:none}}
-@media print{.dash-screen{display:none!important}.dash-report h2{break-after:avoid}}
+@media print{.dash-screen{display:none!important}}
