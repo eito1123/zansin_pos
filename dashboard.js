@@ -63,14 +63,28 @@ function render() {
     const ms = Date.parse(d.last_seen_at), stale = Date.now() - ms > STALE_MS;
     return `<span class="${stale ? 'stale' : ''}">${dayKey(ms) === dayKey(Date.now()) ? timeLabel(ms) : new Date(ms).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}${stale ? ' · 通信なし' : ''}</span>`;
   };
-  main.innerHTML = `<div class="page-heading"><h1>全端末の集計</h1><div class="actions day-tabs">${days.map(k => `<button data-day="${k}" class="${k === selectedDay ? 'selected' : ''}">${k === dayKey(Date.now()) ? '今日' : dayLabel(k)}</button>`).join('')}<button data-day="all" class="${selectedDay === 'all' ? 'selected' : ''}">全期間</button></div></div>
+  const period = selectedDay === 'all' ? '全期間' : dayLabel(selectedDay);
+  main.innerHTML = `<div class="dash-screen"><div class="page-heading"><h1>全端末の集計</h1><div class="actions day-tabs">${days.map(k => `<button data-day="${k}" class="${k === selectedDay ? 'selected' : ''}">${k === dayKey(Date.now()) ? '今日' : dayLabel(k)}</button>`).join('')}<button data-day="all" class="${selectedDay === 'all' ? 'selected' : ''}">全期間</button><button id="print-report" class="print-button">${period}を印刷 / PDF</button></div></div>
 <div class="stats"><div><span>${selectedDay === 'all' ? '全期間' : dayLabel(selectedDay)}の売上（全端末）</span><strong>${yen(sum.amount)}</strong></div><div><span>販売セット数</span><strong>${sum.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${sum.count}<small> 件</small></strong></div></div>
 <div class="dash-grid">
 <section><div class="table-heading"><h2>端末別</h2><span>最終通信が10分以上前なら「通信なし」</span></div><div class="table-scroll"><table><thead><tr><th>端末</th><th>売上</th><th>セット</th><th>件数</th><th>最終通信</th></tr></thead><tbody>${deviceRows.length ? deviceRows.map(d => `<tr><td>${escapeHtml(d.name)}</td><td class="amount-cell">${yen(d.amount)}</td><td>${d.quantity}</td><td>${d.count}</td><td>${lastSeen(d)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">登録された端末はありません。</td></tr>'}</tbody></table></div></section>
 <section><div class="table-heading"><h2>単価別</h2><span>会計時点の単価で集計</span></div><div class="table-scroll"><table><thead><tr><th>単価</th><th>セット</th><th>売上</th></tr></thead><tbody>${byPrice.length ? byPrice.map(([price, list]) => { const t = totals(list); return `<tr><td>${yen(price)}</td><td>${t.quantity}</td><td class="amount-cell">${yen(t.amount)}</td></tr>`; }).join('') : '<tr><td colspan="3" class="empty">売上はありません。</td></tr>'}</tbody></table></div></section>
 </div>
 <section><div class="table-heading"><h2>時間帯別</h2><span>取消済み ${cancelled} 件は集計から除外</span></div><div class="hours">${byHour.length ? byHour.map(([hour, list]) => { const t = totals(list); return `<div class="hour"><span>${hour}時</span><div class="bar"><i style="width:${(t.amount / maxHour * 100).toFixed(1)}%"></i></div><strong>${yen(t.amount)}</strong><small>${t.quantity}セット</small></div>`; }).join('') : '<p class="empty">売上はありません。</p>'}</div></section>
-<p class="hint">各レジの売上は会計後と約1分ごとに送信されます。オフラインのレジの分は、通信が戻るまで反映されません。</p>`;
+<p class="hint">各レジの売上は会計後と約1分ごとに送信されます。オフラインのレジの分は、通信が戻るまで反映されません。</p></div>${report(period, scoped, deviceRows, byPrice)}`;
+}
+// Print-only sales report for the selected period: summaries plus every order (cancelled ones marked, excluded from totals).
+function report(period, scoped, deviceRows, byPrice) {
+  const names = new Map(devices.map(d => [d.device_id, d.name]));
+  const rows = orders.filter(o => selectedDay === 'all' || dayKey(o.ordered_at_ms) === selectedDay).sort((a, b) => a.ordered_at_ms - b.ordered_at_ms || a.order_id.localeCompare(b.order_id));
+  const sum = totals(scoped), byDay = [...groupBy(scoped, o => dayKey(o.ordered_at_ms))].sort((a, b) => a[0].localeCompare(b[0]));
+  const table = (head, body) => `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${body.join('') || `<tr><td colspan="${head.length}">売上はありません</td></tr>`}</tbody></table>`;
+  return `<article class="report dash-report"><h1>zansin学祭POS 全端末 売上明細</h1><p>出力日時：${new Date().toLocaleString('ja-JP')}</p><p>対象：${period} ／ 全端末 ／ 合計は取消済みを除外</p>
+<div class="report-totals">売上合計 ${yen(sum.amount)}　 /　 ${sum.quantity} セット　 /　 ${sum.count} 件</div>
+<h2>端末別</h2>${table(['端末', 'セット', '件数', '売上'], deviceRows.filter(d => d.count).map(d => `<tr><td>${escapeHtml(d.name)}</td><td>${d.quantity}</td><td>${d.count}</td><td>${yen(d.amount)}</td></tr>`))}
+${selectedDay === 'all' ? `<h2>日別</h2>${table(['日付', 'セット', '件数', '売上'], byDay.map(([k, list]) => { const t = totals(list); return `<tr><td>${dayLabel(k)}</td><td>${t.quantity}</td><td>${t.count}</td><td>${yen(t.amount)}</td></tr>`; }))}` : ''}
+<h2>単価別</h2>${table(['単価', 'セット', '件数', '売上'], byPrice.map(([price, list]) => { const t = totals(list); return `<tr><td>${yen(price)}</td><td>${t.quantity}</td><td>${t.count}</td><td>${yen(t.amount)}</td></tr>`; }))}
+<h2>明細（${rows.length} 件・取消済みを含む）</h2>${table(['No.', '日時', '端末', '数量', '単価', '金額', '状態'], rows.map((o, i) => `<tr class="${o.is_active ? '' : 'cancelled'}"><td>${i + 1}</td><td>${new Date(o.ordered_at_ms).toLocaleString('ja-JP')}</td><td>${escapeHtml(names.get(o.source_device_id) || '未登録の端末')}</td><td>${o.quantity}</td><td>${yen(o.unit_price)}</td><td>${yen(o.amount)}</td><td>${o.is_active ? '完了' : '取消済み'}</td></tr>`))}</article>`;
 }
 
 async function load() {
@@ -86,6 +100,7 @@ async function load() {
 }
 
 main.addEventListener('click', event => {
+  if (event.target.closest('#print-report')) { window.print(); return; }
   const button = event.target.closest('button[data-day]');
   if (button) { selectedDay = button.dataset.day; render(); }
 });

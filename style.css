@@ -68,3 +68,9 @@ footer{align-items:center;gap:16px}
 .restore-device small{grid-column:2;color:var(--muted);font-weight:400;font-size:12px}
 .restore-device.selected{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
 .restore-device.selected .check{background:var(--green);border-color:var(--green);color:#fff}
+/* Dashboard print report: hidden on screen, the only thing printed */
+.print-button{background:var(--green);border-color:var(--green);color:#fff}
+.dash-report h2{font-size:15px;margin:22px 0 8px}
+.dash-report .cancelled td{color:#90958b}
+@media screen{.dash-report{display:none}}
+@media print{.dash-screen{display:none!important}.dash-report h2{break-after:avoid}}
