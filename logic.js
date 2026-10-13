@@ -13,6 +13,3 @@ export function makeOrder(quantity, unitPrice, date = Date.now()) {
   if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 999 || !Number.isSafeInteger(unitPrice) || unitPrice < 1 || unitPrice > 999999) throw new Error('数量または単価が正しくありません。');
   return { date, unitPrice, quantity, amount: quantity * unitPrice, isActive: true };
 }
-export function csv(orders) {
-  return '\uFEFFid,date,unitPrice,quantity,amount,isActive\r\n' + orders.map(o => [o.id, new Date(o.date).toISOString(), o.unitPrice, o.quantity, o.amount, o.isActive].join(',')).join('\r\n');
-}
