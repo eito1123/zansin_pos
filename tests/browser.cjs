@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
   const errors=[]; page.on('pageerror', e => errors.push(e.message));
   await page.goto('http://localhost:4173');
   await page.locator('#next').waitFor();
-  assert.equal(await page.title(),'zansin学祭POS');
+  assert.equal(await page.title(),'Zansin学祭POS');
   const originalNext = await page.locator('#next').boundingBox();
   assert.ok(originalNext.height >= 96);
   await page.locator('[data-quantity="3"]').click();

@@ -78,7 +78,7 @@ function report(period) {
   const names = new Map(devices.map(d => [d.device_id, d.name]));
   const rows = orders.filter(o => selectedDay === 'all' || dayKey(o.ordered_at_ms) === selectedDay).sort((a, b) => a.ordered_at_ms - b.ordered_at_ms || a.order_id.localeCompare(b.order_id));
   const sum = totals(rows.filter(o => o.is_active));
-  return `<article class="report dash-report"><h1>zansin学祭POS 全端末 売上明細</h1><p>出力日時：${new Date().toLocaleString('ja-JP')}</p><p>対象：${period} ／ 全端末 ／ ${rows.length} 件（取消済みを含む）</p>
+  return `<article class="report dash-report"><h1>Zansin学祭POS 全端末 売上明細</h1><p>出力日時：${new Date().toLocaleString('ja-JP')}</p><p>対象：${period} ／ 全端末 ／ ${rows.length} 件（取消済みを含む）</p>
 <table><thead><tr><th>No.</th><th>日時</th><th>端末</th><th class="num">数量</th><th class="num">単価</th><th class="num">金額</th><th>状態</th></tr></thead><tbody>${rows.map((o, i) => `<tr class="${o.is_active ? '' : 'cancelled'}"><td>${i + 1}</td><td>${new Date(o.ordered_at_ms).toLocaleString('ja-JP')}</td><td>${escapeHtml(names.get(o.source_device_id) || '未登録の端末')}</td><td class="num">${o.quantity}</td><td class="num">${yen(o.unit_price)}</td><td class="num">${yen(o.amount)}</td><td>${o.is_active ? '完了' : '取消済み'}</td></tr>`).join('') || '<tr><td colspan="7">売上はありません</td></tr>'}</tbody>
 <tfoot><tr><th colspan="3">合計（取消済みを除く ${sum.count} 件）</th><th class="num">${sum.quantity} セット</th><th></th><th class="num">${yen(sum.amount)}</th><th></th></tr></tfoot></table></article>`;
 }
