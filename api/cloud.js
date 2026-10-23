@@ -1,4 +1,5 @@
 import { randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
+import { orderDiscount } from '../logic.js';
 
 const cookieName = '__Host-pos_session';
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -88,7 +89,7 @@ export default async function handler(req, res) {
     if (body.action === 'order') {
       const o = body.order;
       if (!o) throw fail(400, 'Order required');
-      return send(200, await rpc('pos_backup_order', { p_order_id: o.backupId, p_source_device_id: o.sourceDeviceId, p_source_local_id: o.sourceLocalId, p_ordered_at_ms: o.date, p_unit_price: o.unitPrice, p_quantity: o.quantity, p_coupon_count: o.couponCount ?? 0, p_is_active: o.isActive }));
+      return send(200, await rpc('pos_backup_order', { p_order_id: o.backupId, p_source_device_id: o.sourceDeviceId, p_source_local_id: o.sourceLocalId, p_ordered_at_ms: o.date, p_unit_price: o.unitPrice, p_quantity: o.quantity, p_coupon_count: o.couponCount ?? 0, p_coupon_discount: orderDiscount(o), p_is_active: o.isActive }));
     }
     if (body.action === 'devices') return send(200, await call('/rest/v1/pos_backup_devices?select=device_id,name,registered_at,last_seen_at&order=registered_at.asc', { method: 'GET' }));
     if (body.action === 'orders') {

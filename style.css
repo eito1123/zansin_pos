@@ -105,3 +105,4 @@ footer{align-items:center;gap:16px}
 .metric-tabs button{min-height:44px;padding:8px 14px;font-size:12px}
 .metric-tabs button.selected{background:var(--green);border-color:var(--green);color:#fff}
 .dash-screen .table-heading{flex-wrap:wrap;gap:10px}
+.coupon-warning{color:#9c412b;font-weight:700;font-size:13px;margin-top:12px!important;line-height:1.6!important}

@@ -1,4 +1,4 @@
-import { COUPON_DISCOUNT } from './logic.js';
+import { DEFAULT_COUPON_DISCOUNT, orderDiscount } from './logic.js';
 let db;
 const request = req => new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
 function run(stores, mode, work) {
@@ -31,6 +31,7 @@ export async function openDatabase() {
     const settings = tx.objectStore('settings'), store = tx.objectStore('orders');
     let meta = await request(settings.get('cloud'));
     if (!meta) { meta = { deviceId: uuid(), deviceName: '', enabled: false, owner: null, lastBackup: null }; settings.put(meta, 'cloud'); }
+    if (await request(settings.get('couponDiscount')) === undefined) settings.put(DEFAULT_COUPON_DISCOUNT, 'couponDiscount');
     // Prices are local-only now; drop the price backup queue left by older versions.
     if ('queue' in meta || 'revision' in meta) { delete meta.queue; delete meta.revision; settings.put(meta, 'cloud'); }
     for (const order of await request(store.getAll())) {
@@ -45,6 +46,8 @@ export const changeMeta = mutate => run(['settings'], 'readwrite', async tx => {
   const s = tx.objectStore('settings'), m = await request(s.get('cloud')); mutate(m); s.put(m, 'cloud'); return m;
 });
 export const setPrice = price => run(['settings'], 'readwrite', tx => { tx.objectStore('settings').put(price, 'currentUnitPrice'); });
+export const getDiscount = () => run(['settings'], 'readonly', tx => request(tx.objectStore('settings').get('couponDiscount')));
+export const setDiscount = discount => run(['settings'], 'readwrite', tx => { tx.objectStore('settings').put(discount, 'couponDiscount'); });
 export const saveOrder = order => run(['orders','settings'], 'readwrite', async tx => {
   const meta = await request(tx.objectStore('settings').get('cloud')), s = tx.objectStore('orders');
   const row = { ...order, backupId: uuid(), sourceDeviceId: meta.deviceId, version: 1, syncedVersion: 0 };
@@ -69,8 +72,8 @@ export function validateRestore(rows) {
   const ids = new Set(), origins = new Set();
   const isUuid = v => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
   for (const o of rows) {
-    const origin = `${o.source_device_id}/${o.source_local_id}`, coupons = o.coupon_count ?? 0;
-    if (!isUuid(o.order_id) || !isUuid(o.source_device_id) || ids.has(o.order_id) || origins.has(origin) || !Number.isSafeInteger(o.source_local_id) || o.source_local_id < 1 || !Number.isSafeInteger(o.ordered_at_ms) || o.ordered_at_ms < 0 || o.ordered_at_ms > 8640000000000000 || !Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 999 || !Number.isInteger(o.unit_price) || o.unit_price < 1 || o.unit_price > 999999 || !Number.isInteger(coupons) || coupons < 0 || coupons > o.quantity || o.amount !== o.quantity * o.unit_price - coupons * COUPON_DISCOUNT || typeof o.is_active !== 'boolean') throw new Error('バックアップの内容が不正です。復元を中止しました。');
+    const origin = `${o.source_device_id}/${o.source_local_id}`, coupons = o.coupon_count ?? 0, discount = orderDiscount(o);
+    if (!isUuid(o.order_id) || !isUuid(o.source_device_id) || ids.has(o.order_id) || origins.has(origin) || !Number.isSafeInteger(o.source_local_id) || o.source_local_id < 1 || !Number.isSafeInteger(o.ordered_at_ms) || o.ordered_at_ms < 0 || o.ordered_at_ms > 8640000000000000 || !Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 999 || !Number.isInteger(o.unit_price) || o.unit_price < 1 || o.unit_price > 999999 || !Number.isInteger(coupons) || coupons < 0 || coupons > o.quantity || !Number.isInteger(discount) || discount < 0 || discount > o.unit_price || o.amount !== o.quantity * o.unit_price - coupons * discount || typeof o.is_active !== 'boolean') throw new Error('バックアップの内容が不正です。復元を中止しました。');
     ids.add(o.order_id); origins.add(origin);
   }
 }
@@ -79,7 +82,7 @@ export const restoreBackup = (rows, owner) => {
   return run(['orders','settings'], 'readwrite', async tx => {
     const s = tx.objectStore('settings'), o = tx.objectStore('orders'), meta = await request(s.get('cloud'));
     if (await request(o.count()) || meta.enabled || (meta.owner && meta.owner !== owner)) throw new Error('復元は売上のない、バックアップ未開始の端末で実行してください。');
-    for (const r of rows) o.add({ backupId: r.order_id, sourceDeviceId: r.source_device_id, sourceLocalId: r.source_local_id, date: r.ordered_at_ms, unitPrice: r.unit_price, quantity: r.quantity, couponCount: r.coupon_count ?? 0, amount: r.amount, isActive: r.is_active, version: 1, syncedVersion: 1 });
+    for (const r of rows) o.add({ backupId: r.order_id, sourceDeviceId: r.source_device_id, sourceLocalId: r.source_local_id, date: r.ordered_at_ms, unitPrice: r.unit_price, quantity: r.quantity, couponCount: r.coupon_count ?? 0, couponDiscount: orderDiscount(r), amount: r.amount, isActive: r.is_active, version: 1, syncedVersion: 1 });
     Object.assign(meta, { owner, enabled: true, lastBackup: Date.now() });
     s.put(meta, 'cloud');
   });

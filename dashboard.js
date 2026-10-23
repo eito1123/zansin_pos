@@ -1,4 +1,4 @@
-import { yen, COUPON_DISCOUNT } from './logic.js';
+import { yen, orderDiscount } from './logic.js';
 
 const main = document.querySelector('#dashboard');
 const message = document.querySelector('#message');
@@ -40,7 +40,7 @@ async function fetchAllOrders() {
   }
 }
 function totals(list) {
-  return list.reduce((t, o) => ({ amount: t.amount + o.amount, quantity: t.quantity + o.quantity, coupons: t.coupons + (o.coupon_count ?? 0), count: t.count + 1 }), { amount: 0, quantity: 0, coupons: 0, count: 0 });
+  return list.reduce((t, o) => ({ amount: t.amount + o.amount, quantity: t.quantity + o.quantity, coupons: t.coupons + (o.coupon_count ?? 0), discount: t.discount + (o.coupon_count ?? 0) * orderDiscount(o), count: t.count + 1 }), { amount: 0, quantity: 0, coupons: 0, discount: 0, count: 0 });
 }
 function groupBy(list, key) {
   const map = new Map();
@@ -73,7 +73,7 @@ function render() {
   };
   const period = selectedDay === 'all' ? '全期間' : dayLabel(selectedDay);
   main.innerHTML = `<div class="dash-screen"><div class="page-heading"><h1>全端末の集計</h1><div class="actions day-tabs">${days.map(k => `<button data-day="${k}" class="${k === selectedDay ? 'selected' : ''}">${k === dayKey(Date.now()) ? '今日' : dayLabel(k)}</button>`).join('')}<button data-day="all" class="${selectedDay === 'all' ? 'selected' : ''}">全期間</button><button id="print-report" class="print-button">${period}を印刷 / PDF</button></div></div>
-<div class="stats"><div><span>${selectedDay === 'all' ? '全期間' : dayLabel(selectedDay)}の売上（全端末）</span><strong>${yen(sum.amount)}</strong></div><div><span>販売セット数</span><strong>${sum.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${sum.count}<small> 件</small></strong></div></div>${sum.coupons ? `<p class="hint">売上はクーポン ${sum.coupons}枚（−${yen(sum.coupons * COUPON_DISCOUNT)}）を差し引いた金額です。</p>` : ''}
+<div class="stats"><div><span>${selectedDay === 'all' ? '全期間' : dayLabel(selectedDay)}の売上（全端末）</span><strong>${yen(sum.amount)}</strong></div><div><span>販売セット数</span><strong>${sum.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${sum.count}<small> 件</small></strong></div></div>${sum.coupons ? `<p class="hint">売上はクーポン ${sum.coupons}枚（−${yen(sum.discount)}）を差し引いた金額です。</p>` : ''}
 <div class="dash-grid">
 <section><div class="table-heading"><h2>端末別</h2><span>最終通信が10分以上前なら「通信なし」</span></div><div class="table-scroll"><table><thead><tr><th>端末</th><th>売上</th><th>セット</th><th>件数</th><th>最終通信</th></tr></thead><tbody>${deviceRows.length ? deviceRows.map(d => `<tr><td>${escapeHtml(d.name)}</td><td class="amount-cell">${yen(d.amount)}</td><td>${d.quantity}</td><td>${d.count}</td><td>${lastSeen(d)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">登録された端末はありません。</td></tr>'}</tbody></table></div></section>
 <section><div class="table-heading"><h2>単価別</h2><span>会計時点の単価で集計</span></div><div class="table-scroll"><table><thead><tr><th>単価</th><th>セット</th><th>売上</th></tr></thead><tbody>${byPrice.length ? byPrice.map(([price, list]) => { const t = totals(list); return `<tr><td>${yen(price)}</td><td>${t.quantity}</td><td class="amount-cell">${yen(t.amount)}</td></tr>`; }).join('') : '<tr><td colspan="3" class="empty">売上はありません。</td></tr>'}</tbody></table></div></section>
@@ -87,8 +87,8 @@ function report(period) {
   const rows = orders.filter(o => selectedDay === 'all' || dayKey(o.ordered_at_ms) === selectedDay).sort((a, b) => a.ordered_at_ms - b.ordered_at_ms || a.order_id.localeCompare(b.order_id));
   const sum = totals(rows.filter(o => o.is_active));
   return `<article class="report dash-report"><h1>Zansin学祭POS 全端末 売上明細</h1><p>出力日時：${new Date().toLocaleString('ja-JP')}</p><p>対象：${period} ／ 全端末 ／ ${rows.length} 件（取消済みを含む）</p>
-<table><thead><tr><th>No.</th><th>日時</th><th>端末</th><th class="num">数量</th><th class="num">単価</th><th class="num">クーポン</th><th class="num">金額</th><th>状態</th></tr></thead><tbody>${rows.map((o, i) => `<tr class="${o.is_active ? '' : 'cancelled'}"><td>${i + 1}</td><td>${new Date(o.ordered_at_ms).toLocaleString('ja-JP')}</td><td>${escapeHtml(names.get(o.source_device_id) || '未登録の端末')}</td><td class="num">${o.quantity}</td><td class="num">${yen(o.unit_price)}</td><td class="num">${o.coupon_count ? `${o.coupon_count}枚 −${yen(o.coupon_count * COUPON_DISCOUNT)}` : '—'}</td><td class="num">${yen(o.amount)}</td><td>${o.is_active ? '完了' : '取消済み'}</td></tr>`).join('') || '<tr><td colspan="8">売上はありません</td></tr>'}</tbody>
-<tfoot><tr><th colspan="3">合計（取消済みを除く ${sum.count} 件）</th><th class="num">${sum.quantity} セット</th><th></th><th class="num">${sum.coupons ? `${sum.coupons}枚 −${yen(sum.coupons * COUPON_DISCOUNT)}` : '—'}</th><th class="num">${yen(sum.amount)}</th><th></th></tr></tfoot></table></article>`;
+<table><thead><tr><th>No.</th><th>日時</th><th>端末</th><th class="num">数量</th><th class="num">単価</th><th class="num">クーポン</th><th class="num">金額</th><th>状態</th></tr></thead><tbody>${rows.map((o, i) => `<tr class="${o.is_active ? '' : 'cancelled'}"><td>${i + 1}</td><td>${new Date(o.ordered_at_ms).toLocaleString('ja-JP')}</td><td>${escapeHtml(names.get(o.source_device_id) || '未登録の端末')}</td><td class="num">${o.quantity}</td><td class="num">${yen(o.unit_price)}</td><td class="num">${o.coupon_count ? `${o.coupon_count}枚 −${yen(o.coupon_count * orderDiscount(o))}` : '—'}</td><td class="num">${yen(o.amount)}</td><td>${o.is_active ? '完了' : '取消済み'}</td></tr>`).join('') || '<tr><td colspan="8">売上はありません</td></tr>'}</tbody>
+<tfoot><tr><th colspan="3">合計（取消済みを除く ${sum.count} 件）</th><th class="num">${sum.quantity} セット</th><th></th><th class="num">${sum.coupons ? `${sum.coupons}枚 −${yen(sum.discount)}` : '—'}</th><th class="num">${yen(sum.amount)}</th><th></th></tr></tfoot></table></article>`;
 }
 
 async function load() {
