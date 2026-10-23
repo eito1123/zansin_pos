@@ -21,7 +21,7 @@ export async function openDatabase() {
     const req = indexedDB.open('festival-yakitori-pos', 1);
     req.onupgradeneeded = () => {
       req.result.createObjectStore('orders', { keyPath: 'id', autoIncrement: true }).createIndex('date', 'date');
-      req.result.createObjectStore('settings').put(300, 'currentUnitPrice');
+      req.result.createObjectStore('settings').put(350, 'currentUnitPrice');
     };
     req.onsuccess = () => { db = req.result; db.onversionchange = () => db.close(); resolve(); };
     req.onerror = () => reject(req.error);

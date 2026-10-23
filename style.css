@@ -81,7 +81,7 @@ footer{align-items:center;gap:16px}
 .coupon-row button{min-height:64px;font-size:30px;padding:0;background:#fffefa}
 .coupon-row strong{font-size:34px;text-align:center;font-variant-numeric:tabular-nums}.coupon-row strong small{font-size:14px;font-weight:500}
 .coupon-note{min-height:18px;font-size:13px;color:#9c412b;font-weight:700;margin-top:6px;text-align:right}
-.coupon-detail{display:block;margin:6px 0 0!important;color:var(--orange);font-weight:700}
+.coupon-detail{display:block;min-height:1.5em;margin:6px 0 0!important;color:var(--orange);font-weight:700}
 .coupon-tag{display:block;font-size:11px;font-weight:600;color:var(--orange)}
 #coupon-summary{display:grid;gap:10px;margin-top:8px}
 #coupon-summary>div{display:flex;justify-content:space-between;align-items:baseline;font-size:18px}
@@ -96,3 +96,12 @@ footer{align-items:center;gap:16px}
 .checkout-layout .change-box strong{font-size:46px}
 .coupon-row{margin-top:14px}
 #coupon-dialog .primary{justify-content:center}
+/* Fixed line heights so the coupon buttons and amounts never move as the count changes */
+.coupon-detail{height:22px;min-height:0;line-height:22px;overflow:hidden}
+.coupon-note{height:20px;min-height:0;line-height:20px;overflow:hidden}
+
+/* Hourly chart metric switch */
+.metric-tabs{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.metric-tabs button{min-height:44px;padding:8px 14px;font-size:12px}
+.metric-tabs button.selected{background:var(--green);border-color:var(--green);color:#fff}
+.dash-screen .table-heading{flex-wrap:wrap;gap:10px}

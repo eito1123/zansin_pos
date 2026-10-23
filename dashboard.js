@@ -6,7 +6,14 @@ const updated = document.querySelector('#updated');
 const refreshButton = document.querySelector('#refresh');
 const logoutButton = document.querySelector('#logout');
 const STALE_MS = 10 * 60 * 1000;
-let orders = [], devices = [], selectedDay = dayKey(Date.now()), loading = false, loggedIn = false;
+let orders = [], devices = [], selectedDay = dayKey(Date.now()), hourMetric = 'amount', loading = false, loggedIn = false;
+// Hourly chart metrics: [tab label, value from totals(), value label]
+const HOUR_METRICS = {
+  amount: ['売上金額', t => t.amount, v => yen(v)],
+  quantity: ['セット数', t => t.quantity, v => `${v}セット`],
+  count: ['会計回数', t => t.count, v => `${v}回`],
+  coupons: ['クーポン数', t => t.coupons, v => `${v}枚`],
+};
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 function dayKey(ms) { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
@@ -57,7 +64,8 @@ function render() {
     .sort((a, b) => b.amount - a.amount);
   const byPrice = [...groupBy(scoped, o => o.unit_price)].sort((a, b) => b[0] - a[0]);
   const byHour = [...groupBy(scoped, o => new Date(o.ordered_at_ms).getHours())].sort((a, b) => a[0] - b[0]);
-  const maxHour = Math.max(1, ...byHour.map(([, list]) => totals(list).amount));
+  const [, metricOf, metricLabel] = HOUR_METRICS[hourMetric];
+  const maxHour = Math.max(1, ...byHour.map(([, list]) => metricOf(totals(list))));
   const lastSeen = d => {
     if (!d.last_seen_at) return '—';
     const ms = Date.parse(d.last_seen_at), stale = Date.now() - ms > STALE_MS;
@@ -70,7 +78,7 @@ function render() {
 <section><div class="table-heading"><h2>端末別</h2><span>最終通信が10分以上前なら「通信なし」</span></div><div class="table-scroll"><table><thead><tr><th>端末</th><th>売上</th><th>セット</th><th>件数</th><th>最終通信</th></tr></thead><tbody>${deviceRows.length ? deviceRows.map(d => `<tr><td>${escapeHtml(d.name)}</td><td class="amount-cell">${yen(d.amount)}</td><td>${d.quantity}</td><td>${d.count}</td><td>${lastSeen(d)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">登録された端末はありません。</td></tr>'}</tbody></table></div></section>
 <section><div class="table-heading"><h2>単価別</h2><span>会計時点の単価で集計</span></div><div class="table-scroll"><table><thead><tr><th>単価</th><th>セット</th><th>売上</th></tr></thead><tbody>${byPrice.length ? byPrice.map(([price, list]) => { const t = totals(list); return `<tr><td>${yen(price)}</td><td>${t.quantity}</td><td class="amount-cell">${yen(t.amount)}</td></tr>`; }).join('') : '<tr><td colspan="3" class="empty">売上はありません。</td></tr>'}</tbody></table></div></section>
 </div>
-<section><div class="table-heading"><h2>時間帯別</h2><span>取消済み ${cancelled} 件は集計から除外</span></div><div class="hours">${byHour.length ? byHour.map(([hour, list]) => { const t = totals(list); return `<div class="hour"><span>${hour}時</span><div class="bar"><i style="width:${(t.amount / maxHour * 100).toFixed(1)}%"></i></div><strong>${yen(t.amount)}</strong><small>${t.quantity}セット</small></div>`; }).join('') : '<p class="empty">売上はありません。</p>'}</div></section>
+<section><div class="table-heading"><h2>時間帯別</h2><div class="metric-tabs">${Object.entries(HOUR_METRICS).map(([key, [label]]) => `<button data-metric="${key}" class="${key === hourMetric ? 'selected' : ''}" aria-pressed="${key === hourMetric}">${label}</button>`).join('')}</div></div><div class="hours">${byHour.length ? byHour.map(([hour, list]) => { const t = totals(list), v = metricOf(t); return `<div class="hour"><span>${hour}時</span><div class="bar"><i style="width:${(v / maxHour * 100).toFixed(1)}%"></i></div><strong>${metricLabel(v)}</strong><small>${hourMetric === 'amount' ? `${t.quantity}セット` : yen(t.amount)}</small></div>`; }).join('') : '<p class="empty">売上はありません。</p>'}</div><p class="hint">取消済み ${cancelled} 件は集計から除外しています。</p></section>
 <p class="hint">各レジの売上は会計後と約1分ごとに送信されます。オフラインのレジの分は、通信が戻るまで反映されません。</p></div>${report(period)}`;
 }
 // Print-only list of every order in the selected period, oldest first (cancelled ones included and marked).
@@ -97,6 +105,8 @@ async function load() {
 
 main.addEventListener('click', event => {
   if (event.target.closest('#print-report')) { window.print(); return; }
+  const metric = event.target.closest('button[data-metric]');
+  if (metric) { hourMetric = metric.dataset.metric; render(); return; }
   const button = event.target.closest('button[data-day]');
   if (button) { selectedDay = button.dataset.day; render(); }
 });
