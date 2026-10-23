@@ -1,16 +1,17 @@
-import { yen, appendDigit, summarize, makeOrder } from './logic.js';
+import { yen, appendDigit, summarize, makeOrder, appliedCoupons, COUPON_DISCOUNT, MAX_COUPONS } from './logic.js';
 import { openDatabase, getPrice, setPrice, getOrders, saveOrder, cancelOrder } from './db.js';
 import { cloudState, onCloudChange, initCloud, refreshCloudState, loginCloud, logoutCloud, startBackup, syncCloud, restoreCloud, listRestoreSources } from './cloud.js';
 
 const app = document.querySelector('#app');
 const message = document.querySelector('#message');
 const dialog = document.querySelector('#cancel-dialog');
-let screen = 'quantity', quantity = '', received = '', priceInput = '', unitPrice = 300, checkoutPrice = 300;
+const couponDialog = document.querySelector('#coupon-dialog');
+let screen = 'quantity', quantity = '', received = '', priceInput = '', unitPrice = 300, checkoutPrice = 300, coupons = 0;
 let orders = [], busy = false, ready = false, pendingCancel = null, offlineReady = false;
 let restoreSources = null, restoreSelected = new Set();
 let swRegistration, reloadPending = false, reloading = false;
 const updateButton = document.querySelector('#update-app');
-const canUpdate = () => ready && !busy && screen === 'quantity' && quantity === '' && !dialog.open;
+const canUpdate = () => ready && !busy && screen === 'quantity' && quantity === '' && !dialog.open && !couponDialog.open;
 function updateAvailability() {
   updateButton.hidden = !swRegistration?.waiting && !reloadPending;
   updateButton.disabled = !canUpdate();
@@ -65,6 +66,11 @@ onCloudChange(() => {
   if (changed && screen === 'cloud' && !busy) render(); else cloudStatus();
 });
 function backgroundBackup() { void syncCloud().catch(() => {}); }
+// Amounts for the current checkout, with coupons applied (at most one per set).
+function bill() {
+  const subtotal = Number(quantity) * checkoutPrice, applied = appliedCoupons(coupons, Number(quantity), checkoutPrice);
+  return { subtotal, applied, ignored: coupons - applied, discount: applied * COUPON_DISCOUNT, payable: subtotal - applied * COUPON_DISCOUNT };
+}
 function render() {
   app.setAttribute('aria-busy', String(busy));
   document.querySelector('#home').disabled = busy;
@@ -72,11 +78,11 @@ function render() {
   if (screen === 'quantity') {
     app.innerHTML = `<div class="page-heading"><button data-screen="history" class="history-button">売上履歴 <span>↗</span></button></div><div class="order-layout"><section class="selection"><div class="section-label"><span class="price-chip">1セット ${yen(unitPrice)}</span></div><div class="presets">${[1,2,3,4].map(n => `<button data-quantity="${n}" class="preset ${Number(quantity) === n ? 'selected' : ''}"><strong>${n}</strong><span>セット</span><small>${yen(n * unitPrice)}</small></button>`).join('')}</div></section><section class="input-panel"><div class="quantity-display"><span>ご注文の数量</span><div><strong id="quantity-value">${Number(quantity)}</strong><span>セット</span></div></div>${keypad()}<div class="subtotal"><span>お会計予定</span><strong id="subtotal">${yen(total)}</strong></div><button class="primary wide" id="next" ${Number(quantity) < 1 ? 'disabled' : ''}>お会計へ <span>→</span></button></section></div>`;
   } else if (screen === 'checkout') {
-    const change = Number(received) - total;
-    app.innerHTML = `<div class="page-heading">${back('quantity', '数量入力へ')}</div><div class="checkout-layout"><section class="bill-panel"><h1>お会計</h1><div class="bill-total">${yen(total)}</div><p class="bill-detail">${quantity} セット <span>×</span> ${yen(checkoutPrice)}</p><div class="change-box"><span>お釣り</span><strong id="change">${received && change >= 0 ? yen(change) : '—'}</strong><small id="shortfall">${received && change < 0 ? `${yen(-change)} 不足しています` : ''}</small></div></section><section class="input-panel"><div class="received-display"><span>お預かり</span><strong id="received-value">${received ? yen(Number(received)) : '¥0'}</strong></div>${keypad()}<button class="primary wide" id="complete" ${received !== '' && change < 0 ? 'disabled' : ''}>会計完了 <span>✓</span></button><p class="hint completion-hint">お預かり未入力なら、計算せず完了</p></section></div>`;
+    const b = bill(), change = Number(received) - b.payable;
+    app.innerHTML = `<div class="page-heading">${back('quantity', '数量入力へ')}</div><div class="checkout-layout"><section class="bill-panel"><h1>お会計</h1><div class="bill-total">${yen(b.payable)}</div><p class="bill-detail">${quantity} セット <span>×</span> ${yen(checkoutPrice)}${b.applied ? `<span class="coupon-detail">クーポン ${b.applied}枚 −${yen(b.discount)}</span>` : ''}</p><div class="coupon-row"><span>クーポン</span><button data-coupon="-1" aria-label="クーポンを1枚減らす" ${coupons < 1 ? 'disabled' : ''}>−</button><strong id="coupon-count">${coupons}<small> 枚</small></strong><button data-coupon="1" aria-label="クーポンを1枚増やす" ${coupons >= MAX_COUPONS || checkoutPrice < COUPON_DISCOUNT ? 'disabled' : ''}>＋</button></div><p class="coupon-note">${b.ignored > 0 ? `${b.ignored}枚は対象外（1枚につき1セット）` : ''}</p><div class="change-box"><span>お釣り</span><strong id="change">${received && change >= 0 ? yen(change) : '—'}</strong><small id="shortfall">${received && change < 0 ? `${yen(-change)} 不足しています` : ''}</small></div></section><section class="input-panel"><div class="received-display"><span>お預かり</span><strong id="received-value">${received ? yen(Number(received)) : '¥0'}</strong></div>${keypad()}<button class="primary wide" id="complete" ${received !== '' && change < 0 ? 'disabled' : ''}>${b.applied ? `クーポン${b.applied}枚で会計完了` : '会計完了'} <span>✓</span></button><p class="hint completion-hint">お預かり未入力なら、計算せず完了</p></section></div>`;
   } else if (screen === 'history') {
     const today = summarize(orders, new Date());
-    app.innerHTML = `<div class="page-heading"><div>${back('quantity', 'レジに戻る')}<h1>売上履歴</h1></div><div class="actions"><a class="link-button" href="./dashboard.html">全端末の集計 ↗</a><button data-screen="cloud">バックアップ</button><button data-screen="settings">価格設定</button></div></div><div class="stats"><div><span>本日売上</span><strong>${yen(today.amount)}</strong></div><div><span>販売セット数</span><strong>${today.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${today.count}<small> 件</small></strong></div></div><div class="table-heading"><h2>すべての会計</h2><span>新しい順 · 取消済みを含む ${orders.length} 件</span></div><div class="table-scroll"><table><thead><tr><th>日時</th><th>数量</th><th>当時の単価</th><th>会計金額</th><th>状態</th><th></th></tr></thead><tbody>${orders.length ? orders.map(o => `<tr class="${o.isActive ? '' : 'cancelled'}"><td>${new Date(o.date).toLocaleString('ja-JP', { year: 'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</td><td>${o.quantity} セット</td><td>${yen(o.unitPrice)}</td><td class="amount-cell">${yen(o.amount)}</td><td><span class="badge ${o.isActive ? '' : 'inactive'}">${o.isActive ? '完了' : '取消済み'}</span></td><td>${o.isActive ? `<button class="cancel-button" data-cancel="${o.id}">取消</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">売上はまだありません。最初の会計をはじめましょう。</td></tr>'}</tbody></table></div><p class="hint">集計はこの端末の本日分です。全端末の売上の確認・印刷は「全端末の集計」から行えます。</p>`;
+    app.innerHTML = `<div class="page-heading"><div>${back('quantity', 'レジに戻る')}<h1>売上履歴</h1></div><div class="actions"><a class="link-button" href="./dashboard.html">全端末の集計 ↗</a><button data-screen="cloud">バックアップ</button><button data-screen="settings">価格設定</button></div></div><div class="stats"><div><span>本日売上</span><strong>${yen(today.amount)}</strong></div><div><span>販売セット数</span><strong>${today.quantity}<small> セット</small></strong></div><div><span>会計件数</span><strong>${today.count}<small> 件</small></strong></div></div><div class="table-heading"><h2>すべての会計</h2><span>新しい順 · 取消済みを含む ${orders.length} 件</span></div><div class="table-scroll"><table><thead><tr><th>日時</th><th>数量</th><th>当時の単価</th><th>会計金額</th><th>状態</th><th></th></tr></thead><tbody>${orders.length ? orders.map(o => `<tr class="${o.isActive ? '' : 'cancelled'}"><td>${new Date(o.date).toLocaleString('ja-JP', { year: 'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}</td><td>${o.quantity} セット</td><td>${yen(o.unitPrice)}</td><td class="amount-cell">${yen(o.amount)}${o.couponCount ? `<small class="coupon-tag">クーポン${o.couponCount}枚 −${yen(o.couponCount * COUPON_DISCOUNT)}</small>` : ''}</td><td><span class="badge ${o.isActive ? '' : 'inactive'}">${o.isActive ? '完了' : '取消済み'}</span></td><td>${o.isActive ? `<button class="cancel-button" data-cancel="${o.id}">取消</button>` : '—'}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">売上はまだありません。最初の会計をはじめましょう。</td></tr>'}</tbody></table></div><p class="hint">集計はこの端末の本日分です。全端末の売上の確認・印刷は「全端末の集計」から行えます。</p>`;
   } else if (screen === 'cloud') {
     app.innerHTML = cloudPanel(); cloudStatus();
   } else {
@@ -93,18 +99,25 @@ function updateInput(key) {
 }
 async function startCheckout() {
   busy = true; render();
-  try { unitPrice = await getPrice(); checkoutPrice = unitPrice; received = ''; screen = 'checkout'; notify(''); }
+  try { unitPrice = await getPrice(); checkoutPrice = unitPrice; received = ''; coupons = 0; screen = 'checkout'; notify(''); }
   finally { busy = false; render(); }
 }
-async function complete() {
-  if (busy || screen !== 'checkout' || (received !== '' && Number(received) < Number(quantity) * checkoutPrice)) return;
+// Discounting checkouts need an explicit confirmation; plain ones stay one tap.
+function confirmCoupons() {
+  const b = bill();
+  document.querySelector('#coupon-summary').innerHTML = `<div><span>${quantity}セット</span><strong>${yen(b.subtotal)}</strong></div><div><span>クーポン ${b.applied}枚</span><strong>−${yen(b.discount)}</strong></div><div class="coupon-total"><span>お会計</span><strong>${yen(b.payable)}</strong></div>${b.ignored > 0 ? `<p>（${b.ignored}枚は対象外）</p>` : ''}`;
+  couponDialog.showModal();
+}
+async function complete(confirmed = false) {
+  if (busy || screen !== 'checkout' || (received !== '' && Number(received) < bill().payable)) return;
+  if (bill().applied > 0 && !confirmed) return confirmCoupons();
   busy = true; notify('売上を保存しています…'); render();
   try {
-    const order = makeOrder(Number(quantity), checkoutPrice);
+    const order = makeOrder(Number(quantity), checkoutPrice, Date.now(), coupons);
     await saveOrder(order);
     backgroundBackup();
     // Reset immediately after durable commit so a subsequent refresh failure cannot allow resubmission.
-    quantity = ''; received = ''; screen = 'quantity';
+    quantity = ''; received = ''; coupons = 0; screen = 'quantity';
     notify(`${yen(order.amount)} の会計を保存しました。`);
     try { orders = await getOrders(); } catch { notify('会計は保存済みです。履歴の取得に失敗しました。履歴を開き直してください。', true); }
   } catch { notify('売上を保存できませんでした。会計は未完了です。空き容量やブラウザの保存設定を確認して再試行してください。', true); }
@@ -138,6 +151,7 @@ app.addEventListener('click', async event => {
       return;
     }
     if (button.dataset.key) return updateInput(button.dataset.key);
+    if (button.dataset.coupon) { coupons = Math.min(MAX_COUPONS, Math.max(0, coupons + Number(button.dataset.coupon))); return render(); }
     if (button.dataset.quantity) { quantity = button.dataset.quantity; return await startCheckout(); }
     if (button.dataset.screen) {
       const target = button.dataset.screen;
@@ -180,8 +194,12 @@ document.querySelector('#confirm-cancel').addEventListener('click', async () => 
   catch { document.querySelector('#cancel-error').textContent = '処理に失敗しました。履歴を確認して再試行してください。'; }
   finally { busy = false; dialog.querySelectorAll('button').forEach(b => { b.disabled = false; }); render(); }
 });
+document.querySelector('#confirm-coupon').addEventListener('click', () => {
+  if (busy || !couponDialog.open) return;
+  couponDialog.close(); void complete(true);
+});
 document.querySelector('#home').addEventListener('click', () => {
-  if (busy || !ready || dialog.open) return;
+  if (busy || !ready || dialog.open || couponDialog.open) return;
   screen = 'quantity'; received = ''; notify(''); render();
 });
 dialog.addEventListener('cancel', e => { if (busy) e.preventDefault(); });

@@ -75,3 +75,24 @@ footer{align-items:center;gap:16px}
 /* Totals row: printed once after the last row, not repeated on every page */
 .dash-report tfoot{display:table-row-group}
 .dash-report tfoot th{background:#eef1ec;border-top:2px solid #172c24;font-size:12px;font-weight:700;color:#172c24;padding:10px 6px}
+/* Coupons (checkout) */
+.coupon-row{display:grid;grid-template-columns:1fr 72px 110px 72px;align-items:center;gap:10px;margin-top:22px;text-align:left}
+.coupon-row>span{font-size:16px;font-weight:600}
+.coupon-row button{min-height:64px;font-size:30px;padding:0;background:#fffefa}
+.coupon-row strong{font-size:34px;text-align:center;font-variant-numeric:tabular-nums}.coupon-row strong small{font-size:14px;font-weight:500}
+.coupon-note{min-height:18px;font-size:13px;color:#9c412b;font-weight:700;margin-top:6px;text-align:right}
+.coupon-detail{display:block;margin:6px 0 0!important;color:var(--orange);font-weight:700}
+.coupon-tag{display:block;font-size:11px;font-weight:600;color:var(--orange)}
+#coupon-summary{display:grid;gap:10px;margin-top:8px}
+#coupon-summary>div{display:flex;justify-content:space-between;align-items:baseline;font-size:18px}
+#coupon-summary .coupon-total{border-top:2px solid var(--green);padding-top:12px;font-size:20px}
+#coupon-summary .coupon-total strong{font-size:44px}
+#coupon-summary p{margin:0;font-size:14px;color:#9c412b;font-weight:700;text-align:right}
+@media(min-width:850px) and (max-height:780px){.coupon-row{margin-top:14px}.coupon-row button{min-height:56px}.checkout-layout .change-box{margin-top:14px;padding-top:16px}}
+/* Keep checkout on one screen with the coupon row added */
+.checkout-layout .bill-panel{padding-top:8px;padding-bottom:0}
+.checkout-layout .bill-total{margin:6px 0 2px}
+.checkout-layout .change-box{margin-top:12px;padding-top:14px;gap:4px}
+.checkout-layout .change-box strong{font-size:46px}
+.coupon-row{margin-top:14px}
+#coupon-dialog .primary{justify-content:center}

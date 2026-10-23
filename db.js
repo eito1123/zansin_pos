@@ -1,3 +1,4 @@
+import { COUPON_DISCOUNT } from './logic.js';
 let db;
 const request = req => new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
 function run(stores, mode, work) {
@@ -68,8 +69,8 @@ export function validateRestore(rows) {
   const ids = new Set(), origins = new Set();
   const isUuid = v => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
   for (const o of rows) {
-    const origin = `${o.source_device_id}/${o.source_local_id}`;
-    if (!isUuid(o.order_id) || !isUuid(o.source_device_id) || ids.has(o.order_id) || origins.has(origin) || !Number.isSafeInteger(o.source_local_id) || o.source_local_id < 1 || !Number.isSafeInteger(o.ordered_at_ms) || o.ordered_at_ms < 0 || o.ordered_at_ms > 8640000000000000 || !Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 999 || !Number.isInteger(o.unit_price) || o.unit_price < 1 || o.unit_price > 999999 || o.amount !== o.quantity * o.unit_price || typeof o.is_active !== 'boolean') throw new Error('バックアップの内容が不正です。復元を中止しました。');
+    const origin = `${o.source_device_id}/${o.source_local_id}`, coupons = o.coupon_count ?? 0;
+    if (!isUuid(o.order_id) || !isUuid(o.source_device_id) || ids.has(o.order_id) || origins.has(origin) || !Number.isSafeInteger(o.source_local_id) || o.source_local_id < 1 || !Number.isSafeInteger(o.ordered_at_ms) || o.ordered_at_ms < 0 || o.ordered_at_ms > 8640000000000000 || !Number.isInteger(o.quantity) || o.quantity < 1 || o.quantity > 999 || !Number.isInteger(o.unit_price) || o.unit_price < 1 || o.unit_price > 999999 || !Number.isInteger(coupons) || coupons < 0 || coupons > o.quantity || o.amount !== o.quantity * o.unit_price - coupons * COUPON_DISCOUNT || typeof o.is_active !== 'boolean') throw new Error('バックアップの内容が不正です。復元を中止しました。');
     ids.add(o.order_id); origins.add(origin);
   }
 }
@@ -78,7 +79,7 @@ export const restoreBackup = (rows, owner) => {
   return run(['orders','settings'], 'readwrite', async tx => {
     const s = tx.objectStore('settings'), o = tx.objectStore('orders'), meta = await request(s.get('cloud'));
     if (await request(o.count()) || meta.enabled || (meta.owner && meta.owner !== owner)) throw new Error('復元は売上のない、バックアップ未開始の端末で実行してください。');
-    for (const r of rows) o.add({ backupId: r.order_id, sourceDeviceId: r.source_device_id, sourceLocalId: r.source_local_id, date: r.ordered_at_ms, unitPrice: r.unit_price, quantity: r.quantity, amount: r.amount, isActive: r.is_active, version: 1, syncedVersion: 1 });
+    for (const r of rows) o.add({ backupId: r.order_id, sourceDeviceId: r.source_device_id, sourceLocalId: r.source_local_id, date: r.ordered_at_ms, unitPrice: r.unit_price, quantity: r.quantity, couponCount: r.coupon_count ?? 0, amount: r.amount, isActive: r.is_active, version: 1, syncedVersion: 1 });
     Object.assign(meta, { owner, enabled: true, lastBackup: Date.now() });
     s.put(meta, 'cloud');
   });

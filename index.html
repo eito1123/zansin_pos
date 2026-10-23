@@ -19,6 +19,7 @@
     <footer><button id="update-app" hidden>最新版に更新</button><span id="storage-status">この端末に売上を保存します</span></footer>
   </div>
   <dialog id="cancel-dialog"><form method="dialog"><span class="eyebrow">CANCEL ORDER</span><h2>この会計を取り消しますか？</h2><p id="cancel-description"></p><p class="muted">履歴は残り、売上の集計から除外されます。</p><div class="dialog-actions"><button value="close">キャンセル</button><button type="button" id="confirm-cancel" class="danger">取り消す</button></div><p id="cancel-error" role="alert"></p></form></dialog>
+  <dialog id="coupon-dialog"><form method="dialog"><span class="eyebrow">COUPON</span><h2>クーポン適用で会計しますか？</h2><div id="coupon-summary"></div><div class="dialog-actions"><button type="button" id="confirm-coupon" class="primary">確定する</button><button value="close">戻る</button></div></form></dialog>
   <script type="module" src="./app.js"></script>
 </body>
 </html>

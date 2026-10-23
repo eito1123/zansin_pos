@@ -25,7 +25,7 @@ test('API enforces origin, password authentication, session and fixed RPC routes
     }
     if (url.endsWith('/auth/v1/user')) return Response.json({ id:'owner' });
     if (url.includes('/rpc/pos_backup_order')) {
-      assert.equal(body.p_order_id, 'sale'); assert.equal(body.owner_id, undefined);
+      assert.equal(body.p_order_id, 'sale'); assert.equal(body.p_coupon_count, 0); assert.equal(body.owner_id, undefined);
       assert.equal(options.headers.Authorization, 'Bearer access'); return Response.json({ is_active:true });
     }
     if (url.includes('/rest/v1/pos_backup_orders?')) {
