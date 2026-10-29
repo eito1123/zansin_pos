@@ -1,91 +1,181 @@
-# Supabaseバックアップの導入
+# Supabase（クラウドバックアップ）の設定と運用
 
-バックアップとiPad交換時の復元専用です。端末間のリアルタイム同期は行いません。
-共通パスワードだけを入力するログイン画面を実装しています。裏側では運営用のSupabase Authアカウントを使い、所有者IDを共通にします。端末は個別のUUIDと端末名で区別します。
+全端末の売上のバックアップ、全端末の集計、iPad 交換時の復元に使います。端末間のリアルタイム同期は行いません（各 iPad の価格・割引額は端末ごとの設定です）。
+
+ログインは共通パスワードだけを入力する方式です。裏側では運営用の Supabase Auth ユーザー1名を全端末で共有し、端末はそれぞれの端末ID（UUID）と端末名で区別します。
 
 ## 初回設定（管理者）
 
-1. SQL Editorで `migrations/202610040001_backup.sql`、次に `migrations/202610040002_devices.sql` を実行。001を実行済みなら002だけを実行してください。
-2. SupabaseのAuthentication → Usersで運営用メールアドレスのユーザーを1名作成し、メール確認済みにして十分に長い共通パスワードを設定します。新規登録は無効にします。既存バックアップがある場合は同じユーザーを使い続けてください。
-3. VercelのProject → Settings → Environment Variablesに以下を登録します（Production。検証時はPreviewにも登録）。
+1. **Supabase のプロジェクトを作る。** 無料プランで足ります。テスト環境を作る場合は、本番とは別のプロジェクトにする。
+2. **SQL を実行する。** SQL Editor で、`migrations/` のファイルを**日付順にすべて**、1本ずつ全文を貼り付けて実行する。
 
-| 変数 | 値 |
-|---|---|
-| `SUPABASE_URL` | SupabaseプロジェクトのHTTPS URL |
-| `SUPABASE_PUBLISHABLE_KEY` | Publishableキー、または旧anonキー。service_roleキーは不要 |
-| `POS_AUTH_EMAIL` | 上記の運営用ユーザーのメールアドレス |
-| `POS_COOKIE_SECRET` | ランダム32バイトを64桁の16進数にした文字列 |
+   | ファイル | 内容 |
+   |---|---|
+   | `202610040001_backup.sql` | 売上・価格バックアップのテーブル、RLS、送信用 RPC |
+   | `202610040002_devices.sql` | 端末登録（端末名・最終通信日時） |
+   | `202610240001_coupons.sql` | クーポン（枚数・1枚あたりの割引額）と、金額の計算式の更新 |
 
-Cookie用秘密鍵は `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"` などで生成してください。共通パスワードとは別物です。値をGitにコミットせず、Vercelの環境変数に保存します。秘密鍵変更時は全端末で再ログインが必要です。
+   各ファイルはトランザクションになっていて、失敗した場合は何も変更されません。実行済みのファイルは再実行しないでください。
 
-4. GitHubへpushしVercelを再デプロイ。環境変数を後から追加した場合も再デプロイが必要です。
-5. アプリの履歴 → バックアップで「端末名」「共通パスワード」を入力。既存レジなら「この端末のバックアップを開始」を選びます。交換後の空の端末なら「交換前の端末から復元」を選びます。
+3. **運営用ユーザーを作る。** Authentication → Users でユーザーを1名作り、メール確認済みにして、十分に長いパスワードを設定する。このパスワードが、現場で入力する**共通パスワード**になる。新規登録（Sign up）は無効にしておく。
+4. **Vercel に環境変数を登録する。** Project → Settings → Environment Variables に、次の4つを登録する。本番の値は **Production**、テスト用の値は **Preview** にだけ登録する（同じ変数に両方のチェックを入れない）。
 
-認証はVercel APIからSupabase Authへ委譲し、同サービスの認証試行レート制限を利用します。パスワードは保存せず、セッションは暗号化したHttpOnly / Secure / SameSite=Strict Cookieで30日保持します。サーバーがアクセストークンを更新できない場合は再ログインを案内します。共通パスワードを知る人はバックアップ全件にアクセスできる運用です。端末名とパスワード入力時のみOSキーボードを使います。
+   | 変数 | 値 |
+   |---|---|
+   | `SUPABASE_URL` | Project Settings → API の Project URL（`https://xxxx.supabase.co`。末尾に `/rest/v1/` は付けない） |
+   | `SUPABASE_PUBLISHABLE_KEY` | Publishable key（旧 anon key）。**service_role キーは使わない** |
+   | `POS_AUTH_EMAIL` | 手順3で作ったユーザーのメールアドレス |
+   | `POS_COOKIE_SECRET` | ランダムな64文字の16進数（下のコマンドで生成）。共通パスワードとは別物 |
 
-通常会計・取消の後と、オンライン復帰時・表示中の約1分ごとに未送信分を再試行します。バックアップ画面に未送信件数（売上の追加・取消）と最終送信時刻を表示します。通信成功後にのみ送信済みにし、応答を失った場合も同じIDで再送します。Web Locks対応の最新iPadOSブラウザを使用してください。
+   ```bash
+   node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+   ```
 
-## SQLの実行
+   値は Git にコミットせず、Vercel にだけ保存します（形式は `.env.example` を参照）。`POS_COOKIE_SECRET` を変えると、全端末で再ログインが必要になります。
 
-1. SupabaseプロジェクトのSQL Editorに `migrations/202610040001_backup.sql` の全文を貼り付けて実行します。初回導入用のため、一度だけ実行してください。既存テーブル名と衝突した場合はトランザクション全体が失敗し、既存データは削除しません。
-2. 002の端末登録SQLも実行します。既存バックアップの端末には仮の端末名が付与されます。
-3. クーポン対応の `migrations/202610240001_coupons.sql` を実行します。**クーポン対応版のアプリをデプロイする前に実行してください。** 先にデプロイすると、SQL実行までバックアップ送信が失敗します（会計は端末内に保存され、実行後に再送されます）。既存の売上はクーポン0枚として金額は変わりません。クーポンの割引額は価格と同じく各端末のローカル設定で、売上ごとに会計時点の1枚あたりの割引額（coupon_discount）を保存します。
+5. **再デプロイする。** 環境変数は、登録したあとのデプロイから反映されます。Vercel の Deployments から最新のデプロイを Redeploy してください。
+6. **各 iPad でログインする。** アプリの売上履歴 → バックアップで、端末名と共通パスワードを入力する。通常のレジは「この端末のバックアップを開始」、交換後の空の端末は「交換前の端末から復元」を選ぶ。
+
+### データベースを変更するとき
+- 変更は `migrations/` に新しいファイルを追加し、本番では**アプリをデプロイする前に**実行する。先にデプロイすると、SQL を実行するまでバックアップ送信が失敗する（会計は端末内に残り、あとで再送される）。
+- 本番で実行する前に、テスト用プロジェクトで実行して Preview で確認し、本番データのバックアップ（下の「データベース内にコピーを取る」）を取っておく。
+
+## 認証とセッション
+
+- アプリは Supabase に直接つながず、Vercel の API（`/api/cloud`）が中継します。API は `POS_AUTH_EMAIL` と入力されたパスワードで Supabase Auth にログインし、ログイン状態を暗号化して Cookie（HttpOnly / Secure / SameSite=Strict、30日）に保存します。パスワードは保存しません。
+- API が受け付けるのは、決まった操作だけです：`login` / `logout` / `status` / `device`（端末登録）/ `order`（売上の送信）/ `devices`（端末一覧）/ `orders`（売上の取得）。
+- **共通パスワードを知っている人は、全端末の売上を閲覧でき、バックアップに書き込めます。** 運営メンバーだけに共有してください。ただし、売上の削除や過去の金額の書き換えは、データベース側で禁止しています。
+- 同じブラウザでは、POS 画面と全端末の集計ページでログイン状態を共有します。集計ページでログアウトすると、そのブラウザのレジのバックアップも止まります。
+- iPad のホーム画面アプリは、Safari とは別に Cookie やデータを持つことがあります。
 
 ## 保存内容とアクセス権
 
-- `pos_backup_orders`: 全期間の売上と取消状態。金額は単価×数量をDBで生成します。
-- `pos_backup_settings`: 旧版で使っていた価格バックアップ。現在は使用しません（価格は各端末のローカルのみ。各売上に会計時点の単価を保存）。既存データは残しても問題ありません。
-- `pos_backup_devices`: 端末名、端末ID、登録日時。売上から外部キーで参照します。最終通信日時は全端末の集計ページに表示します。
-- ログインした本人の行だけ閲覧できます。未ログインでは読み書きできません。
-- クライアントから直接INSERT/UPDATE/DELETEできません。書き込みは売上・端末登録のRPCだけです（アプリは価格RPCを使用しません）。
-- Supabase管理者権限は別です。ブラウザにservice_roleキーやDBパスワードを入れないでください。アプリ接続にはpublishableキー（旧anonキー）とログインセッションを使います。
+| テーブル | 内容 |
+|---|---|
+| `pos_backup_orders` | 全期間の売上と取消状態。単価・セット数・クーポン枚数・1枚あたりの割引額を保存し、金額（`amount`）はデータベースが「単価×セット数 − 割引額×クーポン枚数」で計算する |
+| `pos_backup_devices` | 端末ID、端末名、登録日時、最終通信日時 |
+| `pos_backup_settings` | 旧版で使っていた価格のバックアップ。**現在は使用しない**（価格は各端末のローカル設定） |
 
-## アプリ側のデータ
+- ログインしたユーザー自身の行だけを読めます（RLS）。未ログインでは読み書きできません。
+- クライアントは、テーブルを直接 INSERT / UPDATE / DELETE できません。書き込みは RPC の `pos_backup_order`（売上）と `pos_register_device`（端末登録）だけです（`pos_backup_price` は旧版用で、今のアプリは使いません）。
+- 管理者が SQL Editor や Table Editor で操作する場合は、この制限を受けません。
 
-既存のIndexedDBの数値 `id` はそのまま保持し、各売上に `backupId`（UUID）、`sourceDeviceId`（UUID）、`sourceLocalId`（元の数値ID）を追加します。端末IDもIndexedDBに保存します。
+## バックアップの送信
 
-既存売上の初回移行ではUUIDを一度だけ採番し、売上と一緒にローカルへ永続保存してから送信します。再送・アプリ更新・復元のたびに作り直してはいけません。DBは所有者＋元端末＋元IDの重複も拒否します。
+- 送信のタイミング：会計・取消の直後、オンラインに戻ったとき、アプリを開いたとき、画面を表示している間は約1分ごと。
+- 通信が成功したときだけ送信済みにします。応答が返ってこなかった場合も、同じIDで再送します（行は増えません）。
+- 取消は `is_active = false` として送ります。取消が先に届いても、あとから古い「有効」が届いても、取消のまま維持されます。
+- 同じIDで、単価・セット数・クーポン枚数・割引額などを変えた内容が届くと、エラーになります（売上の改ざん防止）。
+- 同じ端末でアプリを複数のタブで開いても二重に送信しないよう、ブラウザの Web Locks を使います。最新の iPadOS の Safari を使ってください。
 
-端末交換後に復元した売上は、元のUUID・元端末ID・元IDを保持します。新しい売上は新端末IDで作成します。端末データを消した場合は端末IDを新規発行してください。
-
-## 売上の送信契約
+### 送信の仕様（`api/cloud.js` が呼ぶ RPC）
 
 ```js
-await supabase.rpc('pos_backup_order', {
-  p_order_id: order.backupId,
+rpc('pos_backup_order', {
+  p_order_id: order.backupId,             // UUID。端末で一度だけ採番し、再送でも同じ値
   p_source_device_id: order.sourceDeviceId,
-  p_source_local_id: order.sourceLocalId,
-  p_ordered_at_ms: order.date, // 現在のUnixミリ秒をそのまま使用
-  p_unit_price: order.unitPrice,
+  p_source_local_id: order.sourceLocalId, // 端末内の連番ID
+  p_ordered_at_ms: order.date,            // 会計時刻（Unix ミリ秒）
+  p_unit_price: order.unitPrice,          // 会計時点の単価
   p_quantity: order.quantity,
+  p_coupon_count: order.couponCount,      // 適用したクーポン枚数（セット数以下）
+  p_coupon_discount: order.couponDiscount,// 1枚あたりの割引額（クーポンなしなら 0）
   p_is_active: order.isActive,
 });
 ```
 
-同じ内容の再送では行が増えません。取消はfalseを送信します。取消が先に到着した場合も保存でき、その後古いtrueが届いてもfalseのままです。同じUUIDで数量や当時の単価を変更するとエラーになります。RPC返却行のis_activeがfalseなら復元やローカル状態へ反映します。
+クーポン対応前の7引数版（`p_coupon_count` と `p_coupon_discount` がないもの）も、旧版のアプリのために残しています（クーポンは0枚として保存）。
 
-会計はローカルDBのコミットで完了させ、クラウドを待ちません。売上変更と送信待ち情報を同じIndexedDBトランザクションに保存します。送信中に取消された場合、古い送信の成功で新しい送信待ちを消さないよう、ローカルの変更番号を照合してください。
+## アプリ側のデータ（IndexedDB）
 
-## 価格の扱い
-
-現在の販売価格は各端末のIndexedDBにだけ保存し、クラウドには送信しません。端末ごとに価格設定画面で設定してください。売上には会計時点の単価（`unit_price`）を保存するため、価格を変えても過去の売上や集計は変わりません。
+- 売上（`orders`）：端末内の連番 `id` に加えて、`backupId`（UUID）、`sourceDeviceId`、`sourceLocalId`、送信管理用の `version` / `syncedVersion` を持ちます。UUID は一度だけ採番して保存し、再送・更新・復元で作り直しません。
+- 設定（`settings`）：価格（`currentUnitPrice`）、割引額（`couponDiscount`）、クラウドの状態（端末ID・端末名・ログイン先・最終送信時刻）。
+- 端末は、最初にバックアップしたアカウント（ユーザーID）を記録します。別のアカウントでログインすると「保存済みデータとログイン先が異なります」と表示し、データが混ざらないよう送信を止めます。
 
 ## 全端末の集計ページ
 
-`/dashboard.html`（POSの売上履歴 →「全端末の集計」）で、全端末の売上合計・端末別・単価別・時間帯別（売上金額・セット数・会計回数・クーポン数を切り替え）の集計を閲覧できます。ログインはレジと同じ共通パスワードで、PCやスマートフォンからも開けます。同じブラウザでレジとしてログイン済みなら再ログインは不要です。閲覧のみで、売上の取消や変更はできません。約1分ごとに自動更新し、最終通信が10分以上前の端末は「通信なし」と表示します。「○○を印刷 / PDF」で、選択中の期間（全期間も可）の全端末の売上明細（取消済みを含む）と、表の下に合計金額・合計セット数を印刷・PDF保存できます。
+- `/dashboard.html`（POS の売上履歴 →「全端末の集計」）。共通パスワードでログインし、PC やスマートフォンからも開けます。閲覧専用です。
+- 表示：日付ごと（今日・各日・全期間）の売上合計・セット数・会計件数、端末別（最終通信が10分以上前なら「通信なし」）、単価別、時間帯別（売上金額・セット数・会計回数・クーポン数を切り替え）。約1分ごとに自動更新します。
+- 「○○を印刷 / PDF」：選んでいる期間の全端末の売上明細（取消済みを含む）と、表の下に合計（セット数・クーポン・金額）を印刷・PDF保存します。
 
-## iPad交換手順
+## iPad 交換手順
 
-1. 旧iPadの営業を止め、未送信が0件になったことを確認。
-2. 新iPadで共通パスワードと新しい端末名を入力し、「交換前の端末から復元」→ 交換前の端末を選択して履歴・取消を復元。他のレジの売上は取り込みません。交換を繰り返した場合（A→B→C）は、AとBの両方を選びます。価格は復元されないため、価格設定画面で設定してください。新iPadで先に会計したりバックアップを開始しないでください。
-3. 件数・合計を確認して新iPadで営業開始。旧iPadでの営業は再開しない。
+1. 旧 iPad の営業を止め、未送信が0件になったことを確認する。
+2. 新 iPad で、共通パスワードと新しい端末名を入力してログインし、「交換前の端末から復元」→ 交換前の端末を選んで復元する。
+   - 選んだ端末の売上（取消済みを含む）だけを取り込み、ほかのレジの売上は取り込まない。
+   - 交換を繰り返した場合（A→B→C）は、A と B の両方を選ぶ。
+   - 価格と割引額は復元されないので、設定画面で設定する。
+   - 復元より先に、新 iPad で会計したりバックアップを開始したりしない（復元は売上が空の端末でしかできない）。
+3. 件数と合計を確認してから、新 iPad で営業を始める。旧 iPad では営業を再開しない。
 
-復元は選択した端末ごとに `pos_backup_orders` を `source_device_id` で絞り込み、`order_id` の安定した順序でページ分割して全件取得します（最初のレスポンスだけを全件とみなさない）。取消済みも対象です。取得・検証完了後、1つのローカルトランザクションで反映します。未送信のローカル売上がある端末には無条件で上書きしないでください。交換中は旧端末からの書き込みを停止します。
+## 会期後のデータ書き出し
+
+SQL Editor で実行します。結果の表示が100行までに制限されることがあるため、**結果を1セルにまとめて**出力します。
+
+### CSV
+結果のセルの中身をコピーし、メモ帳に貼り付けて「UTF-8 (BOM 付き)」で `sales.csv` として保存すると、Excel でそのまま開けます。結果の「Export → CSV」は使わないでください（CSV がもう1段 CSV で包まれ、Excel で1列に入ってしまいます）。
+
+```sql
+select '日時,端末,単価,数量,クーポン枚数,クーポン1枚の割引額,金額,状態,order_id' || E'\n' ||
+  string_agg(
+    concat_ws(',',
+      to_char(to_timestamp(o.ordered_at_ms / 1000.0) at time zone 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI:SS'),
+      '"' || replace(coalesce(d.name, ''), '"', '""') || '"',
+      o.unit_price, o.quantity, o.coupon_count, o.coupon_discount, o.amount,
+      case when o.is_active then '完了' else '取消済み' end,
+      o.order_id
+    ),
+    E'\n' order by o.ordered_at_ms
+  ) as csv
+from public.pos_backup_orders o
+left join public.pos_backup_devices d
+  on d.owner_id = o.owner_id and d.device_id = o.source_device_id;
+```
+
+### JSON
+
+```sql
+select jsonb_pretty(jsonb_agg(to_jsonb(t) order by t.ordered_at_ms)) as json
+from (
+  select o.order_id,
+    to_char(to_timestamp(o.ordered_at_ms / 1000.0) at time zone 'Asia/Tokyo', 'YYYY-MM-DD"T"HH24:MI:SS+09:00') as ordered_at,
+    o.ordered_at_ms, d.name as device_name, o.unit_price, o.quantity,
+    o.coupon_count, o.coupon_discount, o.amount, o.is_active
+  from public.pos_backup_orders o
+  left join public.pos_backup_devices d
+    on d.owner_id = o.owner_id and d.device_id = o.source_device_id
+) t;
+```
+
+### 件数の確認
+
+```sql
+select count(*) as 全件数,
+       count(*) filter (where is_active) as 有効件数,
+       sum(quantity) filter (where is_active) as セット数,
+       sum(amount) filter (where is_active) as 売上合計
+from public.pos_backup_orders;
+```
+
+書き出したファイルの行数（CSV は見出しを除く）が「全件数」と、売上の合計が全端末の集計ページの全期間の数字と一致することを確認してください。
+
+### データベース内にコピーを取る
+本番で SQL を実行する前などに使います。外部の API から見えない専用のスキーマにコピーします（日付の部分は実行日に変える）。
+
+```sql
+begin;
+create schema if not exists pos_snapshot;
+revoke all on schema pos_snapshot from public, anon, authenticated;
+create table pos_snapshot.orders_20261024 as table public.pos_backup_orders;
+create table pos_snapshot.devices_20261024 as table public.pos_backup_devices;
+commit;
+```
 
 ## 検証
 
-`tests/backup.sql` は導入後の開発用Supabaseで実行する検証です。テストユーザーをトランザクション内に作り、最後にROLLBACKします。認証・再送・取消・価格競合を検証します（価格RPCは現在アプリでは未使用）。
+- `tests/backup.sql`：導入後の**開発用** Supabase の SQL Editor で実行する検証です。テストユーザーをトランザクション内で作り、最後に ROLLBACK します。認証・再送・取消を確認します（クーポン用の SQL より前に作ったもので、7引数版の RPC と旧版の価格 RPC を使います）。
+- `tests/cloud-api.test.mjs`（`npm test`）：Supabase をモックして、Cookie の改ざん拒否、CSRF 対策、許可した操作だけを受け付けること、トークンの更新、送信する値を確認します。
+- `tests/cloud-browser.cjs`：クラウドの応答をモックして、旧データの移行、送信失敗と再送、取消の競合、復元（端末の選択・ページ分割）を確認します。
+- これらは本物の Supabase との接続確認の代わりにはなりません。設定後は、テスト会計 → 全端末の集計で表示を確認 → 別の空のブラウザで復元、まで実際に試してください。
 
-ローカルの `tests/cloud-api.test.mjs` は認証上流をモックし、Cookieの改ざん拒否・CSRF対策・固定RPC・トークン更新を検証します。`tests/cloud-browser.cjs` はクラウド応答をモックし、旧データ移行・送信失敗・取消の競合・ページ分割復元・新端末IDを検証します。これらは本番Supabaseとの疎通確認の代わりにはなりません。設定後はテスト会計→クラウド確認→別の空のブラウザで復元まで実行してください。
-
-参考: https://supabase.com/docs/guides/database/functions / https://supabase.com/docs/guides/database/postgres/row-level-security
+参考：https://supabase.com/docs/guides/database/functions / https://supabase.com/docs/guides/database/postgres/row-level-security
