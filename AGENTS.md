@@ -49,6 +49,62 @@ Supabase（Postgres + Auth）── 全端末の売上バックアップ（読�
 - **iPad 横画面・タッチ操作が前提。** ボタンは大きく、会計画面はスクロールなしで 1 画面に収める（1180×820 と 1024×768 で確認）。OS のキーボードは原則使わない（独自テンキー）。例外はログイン時の端末名とパスワード入力のみ。
 - **画面の文言は日本語。** 金額は `¥1,500` のように 3 桁区切り（`logic.js` の `yen`）。
 
+## コードを読むときの注意
+
+会期中に機能を足しながら作ったため、次のような「読み違えやすい点」が残っています。コードを参考にする・直すときは、先にここを確認してください。
+
+### CSS は後ろの指定が優先される
+`style.css` は、機能を追加するたびに末尾へ上書きの指定を足しています。次のセレクタは、ファイル内に**2〜3か所**指定があり、後ろにある指定が効きます。前の方だけを直しても見た目が変わらない場合は、同じセレクタをファイル全体で検索してください。
+
+`h1` `h2` `th` `td` `footer`（3か所） `#message` `.brand` `.brand strong` `.actions` `.received-display>span` `.coupon-row` `.coupon-note` `.coupon-detail`
+
+ほかに、画面サイズごとの `@media` と、印刷用の `@media print` でも上書きしています。
+
+### 使っていない古い仕組み
+次のものはデータベースやコードに残っていますが、**今のアプリは使っていません**。現役の機能と思って手を入れないでください。
+
+| 残っているもの | 状態 |
+|---|---|
+| テーブル `pos_backup_settings`、RPC `pos_backup_price` | 旧版の価格バックアップ。価格は端末ごとのローカル設定になり、送らなくなった |
+| RPC `pos_backup_order` の7引数版 | クーポン対応前の旧版アプリ用。今のアプリは9引数版を使う |
+| `db.js` の `openDatabase()` にある `queue` / `revision` の削除処理 | 旧版の価格送信の待ち行列を片付けるための移行処理 |
+| `orderDiscount()` が `couponDiscount` のない売上を50円とみなす処理 | 割引額を設定できるようにする前に保存した売上のため |
+| IndexedDB 名 `festival-yakitori-pos`、`sw.js` の `yakitori-pos-` | 初期の名前。変えると端末内の既存データが見えなくなるので、そのままにしている |
+
+### 売上の項目名の対応
+端末内（IndexedDB）とクラウド（Supabase）で、同じ項目の名前が違います。変換は `api/cloud.js`（送信）、`db.js` の `restoreBackup()`（復元）、`dashboard.js`（集計）に分かれています。項目を足すときは、すべての箇所を直してください。
+
+| 意味 | 端末内（`orders`） | クラウド（`pos_backup_orders`） | RPC の引数 |
+|---|---|---|---|
+| 売上のID | `backupId`（UUID） | `order_id` | `p_order_id` |
+| 端末内の連番 | `id` / `sourceLocalId` | `source_local_id` | `p_source_local_id` |
+| 会計した端末 | `sourceDeviceId` | `source_device_id` | `p_source_device_id` |
+| 会計時刻 | `date`（Unix ミリ秒） | `ordered_at_ms` | `p_ordered_at_ms` |
+| 単価 | `unitPrice` | `unit_price` | `p_unit_price` |
+| セット数 | `quantity` | `quantity` | `p_quantity` |
+| 適用クーポン枚数 | `couponCount` | `coupon_count` | `p_coupon_count` |
+| 1枚あたりの割引額 | `couponDiscount` | `coupon_discount` | `p_coupon_discount` |
+| 金額 | `amount`（端末で計算） | `amount`（データベースの生成列） | なし（送らない） |
+| 有効／取消 | `isActive` | `is_active` | `p_is_active` |
+| 送信管理 | `version` / `syncedVersion` | なし | なし |
+| 所有者・受信時刻 | なし | `owner_id` / `backed_up_at` / `updated_at` | なし（サーバーが付ける） |
+
+`logic.js` の `orderDiscount()` は、両方の形（`couponCount` と `coupon_count`）を受け付けます。
+
+### 上限値が複数の場所にある
+| 値 | 場所 |
+|---|---|
+| 数量 1〜999 | `logic.js`（`makeOrder`）、テンキーの桁数（`app.js`）、データベースの制約 |
+| 価格 1〜999,999円 | `logic.js`、`app.js`（価格設定）、データベースの制約 |
+| クーポン 0〜99枚、割引額 1円〜単価 | `logic.js`（`MAX_COUPONS`・`validDiscount`）、データベースの制約 |
+| 送信の間隔 約60秒、通信なしの判定 10分 | `cloud.js`、`dashboard.js`（`STALE_MS`） |
+| ログインの有効期間 30日、取得件数 500件ずつ | `api/cloud.js` |
+
+### 古いままのテスト
+- `supabase/tests/backup.sql` は、クーポン対応前の内容です（7引数版の RPC と、旧版の価格 RPC を確認するもの）。クーポンの列は確認していません。
+- `tests/update.cjs` は、テスト用サーバーの配信ファイルに集計ページ（`dashboard.html` / `dashboard.js`）を含めていません。
+- 今の仕様の例は、`tests/logic.test.mjs`（金額・クーポン）と `tests/cloud-api.test.mjs`（API）が一番正確です。
+
 ## データベース（Supabase）の変更
 
 - 変更は `supabase/migrations/` に**新しいファイルを追加**する。実行済みのファイルは書き換えない。
